@@ -9,6 +9,20 @@ description = "Transparent proxy witness for AI agent ↔ MCP server communicati
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
+authors = [{name = "tokotokokame"}]
+keywords = ["mcp", "ai-agent", "proxy", "audit", "witness", "security", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Logging",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
 dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
@@ -26,6 +40,12 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tokotokokame/agentwit"
+Repository = "https://github.com/tokotokokame/agentwit"
+Issues = "https://github.com/tokotokokame/agentwit/issues"
+Changelog = "https://github.com/tokotokokame/agentwit/releases"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentwit"]
