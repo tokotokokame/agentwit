@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentwit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Transparent proxy witness for AI agent ↔ MCP server communications"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,6 +35,10 @@ dependencies = [
 agentwit = "agentwit.cli:main"
 
 [project.optional-dependencies]
+full = [
+    "langchain-core>=0.2.0",   # LangChain integration
+    "httpx>=0.27.0",           # Webhook notifications (shared with core deps)
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",

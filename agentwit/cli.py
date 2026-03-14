@@ -22,25 +22,66 @@ def main() -> None:
 # proxy
 # ---------------------------------------------------------------------------
 
-@main.command()
-@click.option("--target", required=True, help="Target MCP server URL")
-@click.option("--port", default=8765, show_default=True, help="Port to listen on")
-@click.option("--host", default="127.0.0.1", show_default=True, help="Host to bind")
+@main.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+@click.option("--target", default=None, help="Target MCP server URL (HTTP mode)")
+@click.option("--port", default=8765, show_default=True, help="Port to listen on (HTTP mode)")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Host to bind (HTTP mode)")
 @click.option("--log-dir", default="./witness_logs", show_default=True, help="Directory for witness logs")
 @click.option("--actor", default="agent", show_default=True, help="Actor identifier")
-def proxy(target: str, port: int, host: str, log_dir: str, actor: str) -> None:
-    """Start the transparent HTTP proxy server.
+@click.option("--stdio", is_flag=True, default=False, help="stdio proxy mode: intercept subprocess stdin/stdout")
+@click.option("--webhook", default=None, help="Webhook URL for risk notifications")
+@click.option("--webhook-on", default="HIGH,CRITICAL", show_default=True, help="Comma-separated severity levels that trigger webhook")
+@click.argument("cmd", nargs=-1, type=click.UNPROCESSED)
+def proxy(
+    target: str | None,
+    port: int,
+    host: str,
+    log_dir: str,
+    actor: str,
+    stdio: bool,
+    webhook: str | None,
+    webhook_on: str,
+    cmd: tuple,
+) -> None:
+    """Start the transparent proxy server (HTTP or stdio mode).
 
-    All requests forwarded to TARGET are recorded in LOG_DIR.  Each session
-    gets its own timestamped sub-directory containing a ``witness.jsonl`` file.
-
-    Example:
+    HTTP mode forwards requests to TARGET and records them:
 
         agentwit proxy --target http://localhost:3000 --port 8765
+
+    stdio mode wraps a subprocess MCP server:
+
+        agentwit proxy --stdio -- python mcp_server.py
     """
-    import uvicorn
+    import asyncio
 
     from .witness.log import WitnessLogger
+
+    if stdio:
+        if not cmd:
+            click.echo("Error: --stdio requires a command after --", err=True)
+            sys.exit(1)
+
+        click.echo(f"Starting agentwit stdio proxy")
+        click.echo(f"Command: {list(cmd)}")
+        click.echo(f"Witness logs → {log_dir}", err=True)
+
+        logger = WitnessLogger(session_dir=log_dir, actor=actor)
+        click.echo(f"Session: {logger.session_path}", err=True)
+
+        from .proxy.stdio_proxy import run_stdio_proxy
+
+        exit_code = asyncio.run(run_stdio_proxy(list(cmd), logger, actor=actor))
+        logger.close()
+        sys.exit(exit_code)
+
+    # HTTP mode
+    if not target:
+        click.echo("Error: --target is required in HTTP proxy mode", err=True)
+        sys.exit(1)
+
+    import uvicorn
+
     from .proxy.http_proxy import create_proxy_app
 
     click.echo(f"Starting agentwit proxy → {target}")
