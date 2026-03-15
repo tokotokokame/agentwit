@@ -71,3 +71,4 @@ witness_logs/
 *.pem
 *.key
 secrets.json
+gui/src-tauri/target/
