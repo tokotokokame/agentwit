@@ -1,0 +1,1787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Inspector</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg-00: #080a0d;
+    --bg-01: #0d1018;
+    --bg-02: #131720;
+    --bg-03: #1a1f2c;
+    --bg-04: #222838;
+    --border:    #1e2433;
+    --border-hi: #2c3450;
+    --amber:     #f5a623;
+    --amber-lo:  rgba(245,166,35,0.08);
+    --amber-mid: rgba(245,166,35,0.15);
+    --green:     #3ddc84;
+    --green-lo:  rgba(61,220,132,0.08);
+    --red:       #ff5c5c;
+    --red-lo:    rgba(255,92,92,0.08);
+    --blue:      #5b9cf6;
+    --violet:    #a78bfa;
+    --text-hi:   #dde2f0;
+    --text-md:   #7b869e;
+    --text-lo:   #3d4560;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --radius: 4px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-00);
+    color: var(--text-hi);
+    font-family: var(--mono);
+    font-size: 12px;
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: 44px 1fr;
+  }
+
+  /* subtle scanline texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ══════════════════════════════
+     TITLEBAR
+  ══════════════════════════════ */
+  .titlebar {
+    background: var(--bg-01);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 16px;
+    position: relative;
+    z-index: 10;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-shrink: 0;
+  }
+
+  .logo-icon {
+    width: 24px;
+    height: 24px;
+    border: 1.5px solid var(--amber);
+    border-radius: var(--radius);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 0 10px rgba(245,166,35,0.2), inset 0 0 8px rgba(245,166,35,0.05);
+    position: relative;
+  }
+
+  .logo-icon::after {
+    content: '';
+    width: 7px; height: 7px;
+    background: var(--amber);
+    border-radius: 1px;
+    animation: logo-pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes logo-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(245,166,35,0.4); }
+    50%       { opacity: 0.6; transform: scale(0.75); }
+  }
+
+  .logo-name {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--text-hi);
+  }
+  .logo-name em { color: var(--amber); font-style: normal; }
+
+  .logo-ver {
+    font-size: 10px;
+    color: var(--text-lo);
+    letter-spacing: 0.05em;
+    align-self: flex-end;
+    margin-bottom: 1px;
+  }
+
+  .divider {
+    width: 1px; height: 22px;
+    background: var(--border);
+  }
+
+  /* connection pill */
+  .conn-pill {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 12px;
+    font-size: 11px;
+    color: var(--text-md);
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+    user-select: none;
+  }
+  .conn-pill:hover { border-color: var(--border-hi); color: var(--text-hi); }
+
+  .conn-led {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    flex-shrink: 0;
+    animation: led-breathe 3s ease-in-out infinite;
+  }
+
+  @keyframes led-breathe {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+  }
+
+  .conn-arrow { color: var(--text-lo); font-size: 9px; margin-left: 2px; }
+
+  /* transport toggle */
+  .transport-group {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 3px;
+  }
+
+  .tp-btn {
+    padding: 3px 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    border-radius: 2px;
+    cursor: pointer;
+    color: var(--text-lo);
+    border: 1px solid transparent;
+    transition: all .15s;
+  }
+  .tp-btn:hover { color: var(--text-md); }
+  .tp-btn.on {
+    color: var(--amber);
+    border-color: rgba(245,166,35,0.25);
+    background: var(--amber-lo);
+  }
+
+  /* agentwit badge */
+  .aw-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-lo);
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 11px;
+    cursor: pointer;
+    transition: all .15s;
+    letter-spacing: 0.06em;
+  }
+  .aw-pill:hover { color: var(--text-md); border-color: var(--border-hi); }
+  .aw-pill .aw-led {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 5px var(--green);
+  }
+
+  .titlebar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  .icon-btn {
+    width: 30px; height: 30px;
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    color: var(--text-md);
+    font-size: 13px;
+    transition: all .15s;
+  }
+  .icon-btn:hover { border-color: var(--border-hi); color: var(--text-hi); }
+
+  /* ══════════════════════════════
+     LAYOUT
+  ══════════════════════════════ */
+  .workspace {
+    display: grid;
+    grid-template-columns: 230px 1fr 360px;
+    overflow: hidden;
+  }
+
+  /* ══════════════════════════════
+     LEFT PANEL
+  ══════════════════════════════ */
+  .left-panel {
+    background: var(--bg-01);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .lp-section { border-bottom: 1px solid var(--border); }
+
+  .lp-heading {
+    padding: 10px 14px 8px;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--text-lo);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .badge-count {
+    font-size: 9px;
+    padding: 1px 6px;
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-md);
+    letter-spacing: 0;
+  }
+
+  /* server meta */
+  .server-meta {
+    padding: 4px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .sm-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+  }
+  .sm-key { color: var(--text-lo); }
+  .sm-val { color: var(--text-md); }
+  .sm-val.hi { color: var(--amber); }
+  .sm-val.ok { color: var(--green); }
+
+  /* tool list */
+  .tool-scroller {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+  }
+  .tool-scroller::-webkit-scrollbar { width: 3px; }
+  .tool-scroller::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .tool-row {
+    padding: 9px 14px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background .1s, border-color .1s;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .tool-row:hover { background: var(--bg-02); }
+  .tool-row.sel {
+    background: var(--bg-02);
+    border-left-color: var(--amber);
+  }
+  .tool-row.sel .tr-name { color: var(--amber); }
+
+  .tr-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-hi);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tr-desc {
+    font-size: 10px;
+    color: var(--text-lo);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--sans);
+  }
+
+  .tr-tags { display: flex; gap: 4px; margin-top: 1px; }
+
+  .tag {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+  }
+  .tag-r { background: rgba(91,156,246,0.12); color: var(--blue); }
+  .tag-w { background: rgba(255,92,92,0.12); color: var(--red); }
+  .tag-x { background: rgba(245,166,35,0.12); color: var(--amber); }
+
+  /* ══════════════════════════════
+     CENTER PANEL
+  ══════════════════════════════ */
+  .center-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-00);
+  }
+
+  /* tool header */
+  .tool-hdr {
+    background: var(--bg-01);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  .th-left { display: flex; flex-direction: column; gap: 5px; }
+
+  .th-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-hi);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.01em;
+  }
+
+  .method-tag {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    padding: 3px 7px;
+    border-radius: 2px;
+    background: var(--amber-lo);
+    border: 1px solid rgba(245,166,35,0.2);
+    color: var(--amber);
+  }
+
+  .th-desc {
+    font-size: 11px;
+    color: var(--text-md);
+    font-family: var(--sans);
+    font-weight: 300;
+    line-height: 1.6;
+    max-width: 480px;
+  }
+
+  .th-right { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+  .btn {
+    padding: 7px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    border-radius: var(--radius);
+    cursor: pointer;
+    border: 1px solid;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-md);
+  }
+  .btn-ghost:hover { border-color: var(--border-hi); color: var(--text-hi); }
+
+  .btn-run {
+    background: var(--amber-lo);
+    border-color: var(--amber);
+    color: var(--amber);
+    box-shadow: 0 0 16px rgba(245,166,35,0.1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-run:hover {
+    background: var(--amber-mid);
+    box-shadow: 0 0 24px rgba(245,166,35,0.2);
+  }
+
+  /* center split */
+  .center-split {
+    flex: 1;
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    overflow: hidden;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .cpane {
+    background: var(--bg-00);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .cpane-hdr {
+    padding: 8px 20px;
+    background: var(--bg-02);
+    border-bottom: 1px solid var(--border);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    color: var(--text-lo);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .cpane-actions { display: flex; gap: 6px; align-items: center; }
+
+  .mini-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-lo);
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all .12s;
+    letter-spacing: 0.06em;
+  }
+  .mini-btn:hover { color: var(--text-md); border-color: var(--border-hi); }
+
+  /* params */
+  .params-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .params-body::-webkit-scrollbar { width: 3px; }
+  .params-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .param-item {
+    display: grid;
+    grid-template-columns: 148px 72px 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg-01);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: border-color .12s;
+  }
+  .param-item:hover { border-color: var(--border-hi); }
+  .param-item.req { border-left: 2px solid rgba(245,166,35,0.4); }
+
+  .pi-name {
+    font-size: 11px;
+    color: var(--text-hi);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .pi-req { color: var(--amber); font-size: 10px; }
+
+  .pi-type {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    text-align: center;
+    font-weight: 500;
+  }
+  .pt-str { background: rgba(91,156,246,0.1);  color: var(--blue); }
+  .pt-num { background: rgba(245,166,35,0.1);  color: var(--amber); }
+  .pt-bool{ background: rgba(61,220,132,0.1);  color: var(--green); }
+  .pt-arr { background: rgba(255,92,92,0.1);   color: var(--red); }
+  .pt-obj { background: rgba(167,139,250,0.1); color: var(--violet); }
+
+  .pi-input {
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 5px 9px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-hi);
+    width: 100%;
+    outline: none;
+    transition: border-color .12s, background .12s;
+    appearance: none;
+  }
+  .pi-input:focus { border-color: var(--amber); background: var(--bg-04); }
+  .pi-input::placeholder { color: var(--text-lo); }
+
+  /* response */
+  .resp-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 20px;
+  }
+  .resp-body::-webkit-scrollbar { width: 3px; }
+  .resp-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .resp-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    border: 1px solid;
+  }
+  .resp-banner.ok  { background: var(--green-lo); border-color: rgba(61,220,132,0.18); }
+  .resp-banner.err { background: var(--red-lo);   border-color: rgba(255,92,92,0.18); }
+
+  .resp-code { font-size: 12px; font-weight: 600; }
+  .ok  .resp-code { color: var(--green); }
+  .err .resp-code { color: var(--red); }
+
+  .resp-tool { font-size: 10px; color: var(--text-lo); }
+
+  .resp-meta { margin-left: auto; font-size: 10px; color: var(--text-lo); display: flex; gap: 12px; }
+
+  .json-view {
+    font-size: 11px;
+    line-height: 1.8;
+    color: var(--text-md);
+  }
+  .jk  { color: var(--blue); }
+  .js  { color: var(--green); }
+  .jn  { color: var(--amber); }
+  .jb  { color: var(--violet); }
+  .jnl { color: var(--text-lo); font-style: italic; }
+  .jbr { color: var(--text-lo); }
+
+  /* running indicator */
+  .running-wrap {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--amber);
+    font-size: 10px;
+  }
+  .running-dots span {
+    display: inline-block;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--amber);
+    margin: 0 1px;
+    animation: dot-bounce .9s ease-in-out infinite;
+  }
+  .running-dots span:nth-child(2) { animation-delay: .15s; }
+  .running-dots span:nth-child(3) { animation-delay: .30s; }
+  @keyframes dot-bounce {
+    0%, 100% { transform: translateY(0); opacity: .3; }
+    50%       { transform: translateY(-4px); opacity: 1; }
+  }
+
+  /* statusbar */
+  .statusbar {
+    background: var(--bg-01);
+    border-top: 1px solid var(--border);
+    padding: 5px 20px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-size: 10px;
+    color: var(--text-lo);
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+  .sb-item { display: flex; align-items: center; gap: 5px; }
+  .sb-led  { width: 5px; height: 5px; border-radius: 50%; }
+  .sb-led.g { background: var(--green); box-shadow: 0 0 4px var(--green); }
+  .sb-led.a { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+  .sb-sep   { color: var(--border-hi); }
+  .sb-cost  { color: var(--amber); }
+
+  /* ══════════════════════════════
+     RIGHT PANEL  — tabbed
+  ══════════════════════════════ */
+  .right-panel {
+    background: var(--bg-01);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* tab bar */
+  .rp-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding: 0 4px;
+  }
+
+  .rp-tab {
+    flex: 1;
+    padding: 12px 0 10px;
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-lo);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all .15s;
+    user-select: none;
+    text-transform: uppercase;
+    position: relative;
+    top: 1px;
+  }
+  .rp-tab:hover { color: var(--text-md); }
+  .rp-tab.on { color: var(--amber); border-bottom-color: var(--amber); }
+
+  /* tab panels */
+  .rp-body {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .tab-panel {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    display: none;
+    flex-direction: column;
+  }
+  .tab-panel.on { display: flex; }
+  .tab-panel::-webkit-scrollbar { width: 3px; }
+  .tab-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── HISTORY tab ── */
+  .hist-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-lo);
+    font-size: 11px;
+  }
+
+  .hist-empty-icon { font-size: 28px; opacity: 0.3; }
+
+  .hist-entry {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .1s;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .hist-entry:hover { background: var(--bg-02); }
+  .hist-entry.active { background: var(--bg-03); }
+
+  .he-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .he-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-hi);
+  }
+
+  .he-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 2px;
+  }
+  .he-status.ok  { color: var(--green); background: var(--green-lo); }
+  .he-status.err { color: var(--red);   background: var(--red-lo); }
+
+  .he-mid {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-lo);
+  }
+
+  .he-latency {
+    font-size: 11px;
+    color: var(--text-md);
+    font-family: var(--mono);
+  }
+
+  .he-preview {
+    font-size: 10px;
+    color: var(--text-lo);
+    font-family: var(--mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: var(--bg-02);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 4px 8px;
+    line-height: 1.4;
+  }
+
+  /* ── METRICS tab ── */
+  .metrics-panel {
+    padding: 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .metric-block { display: flex; flex-direction: column; gap: 12px; }
+
+  .metric-block-title {
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    color: var(--text-lo);
+    text-transform: uppercase;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .metric-card {
+    background: var(--bg-02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color .15s;
+  }
+  .metric-card:hover { border-color: var(--border-hi); }
+
+  .mc-val {
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .mc-val.a { color: var(--amber); }
+  .mc-val.g { color: var(--green); }
+  .mc-val.b { color: var(--blue); }
+  .mc-val.w { color: var(--text-hi); }
+
+  .mc-lbl {
+    font-size: 10px;
+    color: var(--text-lo);
+    letter-spacing: 0.08em;
+    font-family: var(--sans);
+  }
+
+  .mc-sub {
+    font-size: 10px;
+    color: var(--text-lo);
+    margin-top: 2px;
+  }
+
+  /* latency chart */
+  .lat-chart-wrap {
+    background: var(--bg-02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .lat-chart-title {
+    font-size: 10px;
+    color: var(--text-lo);
+    letter-spacing: 0.08em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .lat-chart-title span { color: var(--text-md); }
+
+  .bar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 56px;
+  }
+
+  .lbar {
+    flex: 1;
+    background: var(--amber);
+    border-radius: 2px 2px 0 0;
+    opacity: 0.45;
+    transition: opacity .15s;
+    cursor: pointer;
+    position: relative;
+  }
+  .lbar:hover { opacity: 0.85; }
+  .lbar.cur { opacity: 1; box-shadow: 0 0 8px rgba(245,166,35,0.4); }
+  .lbar.err-bar { background: var(--red); }
+
+  .bar-axis {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--text-lo);
+  }
+
+  /* tool usage */
+  .usage-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .usage-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .ur-top {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-md);
+  }
+  .ur-top .ur-n { color: var(--text-lo); }
+
+  .ur-track {
+    height: 3px;
+    background: var(--bg-04);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .ur-fill {
+    height: 100%;
+    background: var(--amber);
+    border-radius: 2px;
+    opacity: 0.6;
+    transition: width .4s ease;
+  }
+
+  /* cost breakdown */
+  .cost-rows { display: flex; flex-direction: column; gap: 6px; }
+
+  .cost-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 11px;
+    background: var(--bg-02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 11px;
+  }
+  .cr-tool { color: var(--text-md); }
+  .cr-cost { color: var(--amber); font-weight: 500; }
+
+  .cost-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 11px;
+    background: var(--amber-lo);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .ct-label { color: var(--text-md); }
+  .ct-val { color: var(--amber); }
+
+  /* ── COMPARE tab ── */
+  .compare-panel {
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .cmp-desc {
+    font-size: 11px;
+    color: var(--text-lo);
+    font-family: var(--sans);
+    line-height: 1.6;
+  }
+
+  .cmp-selectors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .cmp-sel-card {
+    background: var(--bg-02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .csc-label {
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--text-lo);
+    text-transform: uppercase;
+  }
+
+  .csc-val {
+    font-size: 11px;
+    color: var(--text-hi);
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 5px 8px;
+    cursor: pointer;
+    transition: border-color .12s;
+  }
+  .csc-val:hover { border-color: var(--border-hi); }
+
+  .cmp-diff {
+    background: var(--bg-02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .diff-title {
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--text-lo);
+    text-transform: uppercase;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .diff-row {
+    display: grid;
+    grid-template-columns: 100px 1fr 1fr;
+    gap: 8px;
+    font-size: 11px;
+    align-items: start;
+  }
+
+  .diff-key { color: var(--text-lo); padding-top: 2px; }
+  .diff-a { color: var(--blue); background: rgba(91,156,246,0.06); padding: 3px 6px; border-radius: 2px; }
+  .diff-b { color: var(--green); background: rgba(61,220,132,0.06); padding: 3px 6px; border-radius: 2px; }
+  .diff-same { color: var(--text-lo); font-style: italic; }
+
+  .cmp-run-btn {
+    padding: 9px;
+    text-align: center;
+    background: var(--bg-03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 11px;
+    color: var(--text-md);
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: all .15s;
+  }
+  .cmp-run-btn:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-lo); }
+
+  /* flash animation for new history entries */
+  @keyframes entry-flash {
+    0%   { background: rgba(61,220,132,0.12); }
+    100% { background: transparent; }
+  }
+  .hist-entry.flash { animation: entry-flash .5s ease-out; }
+
+</style>
+</head>
+<body>
+
+<!-- ══ TITLEBAR ══ -->
+<header class="titlebar">
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <div class="logo-name">MCP<em>INSPECTOR</em></div>
+    <div class="logo-ver">v0.1.0</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="conn-pill" id="connPill">
+    <div class="conn-led"></div>
+    localhost:3000
+    <span class="conn-arrow">▾</span>
+  </div>
+
+  <div class="transport-group">
+    <div class="tp-btn on"  onclick="setTransport(this,'HTTP')">HTTP</div>
+    <div class="tp-btn"     onclick="setTransport(this,'SSE')">SSE</div>
+    <div class="tp-btn"     onclick="setTransport(this,'stdio')">stdio</div>
+  </div>
+
+  <div class="aw-pill">
+    <div class="aw-led"></div>
+    agentwit audit
+  </div>
+
+  <div class="titlebar-right">
+    <div class="icon-btn" title="Settings">⚙</div>
+    <div class="icon-btn" title="Help">?</div>
+  </div>
+</header>
+
+<!-- ══ WORKSPACE ══ -->
+<div class="workspace">
+
+  <!-- ── LEFT: tool list ── -->
+  <aside class="left-panel">
+
+    <div class="lp-section">
+      <div class="lp-heading">Server</div>
+      <div class="server-meta">
+        <div class="sm-row"><span class="sm-key">name</span>    <span class="sm-val hi">security-analysis</span></div>
+        <div class="sm-row"><span class="sm-key">version</span> <span class="sm-val">v10.0.0</span></div>
+        <div class="sm-row"><span class="sm-key">protocol</span><span class="sm-val">2024-11-05</span></div>
+        <div class="sm-row"><span class="sm-key">status</span>  <span class="sm-val ok">● connected</span></div>
+      </div>
+    </div>
+
+    <div class="lp-section">
+      <div class="lp-heading">Tools <span class="badge-count">10</span></div>
+    </div>
+
+    <div class="tool-scroller" id="toolScroller">
+
+      <div class="tool-row sel" onclick="pickTool(this,'generate-exploit')">
+        <div class="tr-name">generate-exploit</div>
+        <div class="tr-desc">AI-driven exploit generation</div>
+        <div class="tr-tags"><span class="tag tag-x">EXEC</span><span class="tag tag-w">WRITE</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'analyze-source')">
+        <div class="tr-name">analyze-source</div>
+        <div class="tr-desc">Web source code analysis</div>
+        <div class="tr-tags"><span class="tag tag-r">READ</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'cve-to-poc')">
+        <div class="tr-name">cve-to-poc</div>
+        <div class="tr-desc">CVE → PoC converter</div>
+        <div class="tr-tags"><span class="tag tag-x">EXEC</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'htb-advisor')">
+        <div class="tr-name">htb-advisor</div>
+        <div class="tr-desc">HTB attack path guidance</div>
+        <div class="tr-tags"><span class="tag tag-r">READ</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'nmap-scan')">
+        <div class="tr-name">nmap-scan</div>
+        <div class="tr-desc">Port scanner · stealth modes</div>
+        <div class="tr-tags"><span class="tag tag-x">EXEC</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'full-chain-exploit')">
+        <div class="tr-name">full-chain-exploit</div>
+        <div class="tr-desc">End-to-end exploit chain</div>
+        <div class="tr-tags"><span class="tag tag-x">EXEC</span><span class="tag tag-w">WRITE</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'enrich-cves')">
+        <div class="tr-name">enrich-cves</div>
+        <div class="tr-desc">NVD CVSS scoring</div>
+        <div class="tr-tags"><span class="tag tag-r">READ</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'cloud-scan')">
+        <div class="tr-name">cloud-scan</div>
+        <div class="tr-desc">AWS / GCP / Azure ScoutSuite</div>
+        <div class="tr-tags"><span class="tag tag-x">EXEC</span><span class="tag tag-r">READ</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'attack-suggest')">
+        <div class="tr-name">attack-suggest</div>
+        <div class="tr-desc">Multi-AI attack strategy</div>
+        <div class="tr-tags"><span class="tag tag-r">READ</span></div>
+      </div>
+
+      <div class="tool-row" onclick="pickTool(this,'msf-execute')">
+        <div class="tr-name">msf-execute</div>
+        <div class="tr-desc">Metasploit module runner</div>
+        <div class="tr-tags"><span class="tag tag-x">EXEC</span></div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ── CENTER ── -->
+  <main class="center-panel">
+
+    <div class="tool-hdr">
+      <div class="th-left">
+        <div class="th-name">
+          <span id="toolName">generate-exploit</span>
+          <span class="method-tag">POST</span>
+        </div>
+        <div class="th-desc" id="toolDesc">
+          Generates exploit code using AI analysis. Supports EDR evasion prompts, LOLBins prioritization, and risk-level gating.
+        </div>
+      </div>
+      <div class="th-right">
+        <button class="btn btn-ghost" onclick="clearParams()">CLEAR</button>
+        <button class="btn btn-ghost" onclick="fillExample()">EXAMPLE</button>
+        <button class="btn btn-run" onclick="runTool()">
+          <span id="runIcon">▶</span> RUN
+        </button>
+      </div>
+    </div>
+
+    <div class="center-split">
+
+      <!-- params pane -->
+      <div class="cpane">
+        <div class="cpane-hdr">
+          Parameters
+          <div class="cpane-actions">
+            <button class="mini-btn" onclick="copyJSON()">COPY JSON</button>
+            <button class="mini-btn">SCHEMA</button>
+          </div>
+        </div>
+        <div class="params-body" id="paramsBody">
+          <!-- injected by JS -->
+        </div>
+      </div>
+
+      <!-- response pane -->
+      <div class="cpane">
+        <div class="cpane-hdr">
+          Response
+          <div class="cpane-actions">
+            <div class="running-wrap" id="runningWrap" style="display:none">
+              executing
+              <div class="running-dots"><span></span><span></span><span></span></div>
+            </div>
+            <button class="mini-btn" onclick="copyResp()">COPY</button>
+            <button class="mini-btn">RAW</button>
+          </div>
+        </div>
+        <div class="resp-body" id="respBody">
+          <div style="color:var(--text-lo);font-size:11px;padding-top:8px">
+            // Press RUN to execute the tool
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="statusbar">
+      <div class="sb-item"><div class="sb-led g"></div>MCP v10</div>
+      <span class="sb-sep">|</span>
+      <div class="sb-item"><div class="sb-led a"></div><span id="sbTransport">Streamable HTTP</span></div>
+      <span class="sb-sep">|</span>
+      <div class="sb-item">session: 4f8a2c</div>
+      <span class="sb-sep">|</span>
+      <div class="sb-item">10 tools · 0 resources · 0 prompts</div>
+      <span class="sb-sep">|</span>
+      <div class="sb-item sb-cost" id="sbCost">session: $0.0000</div>
+    </div>
+  </main>
+
+  <!-- ── RIGHT: tabbed panel ── -->
+  <aside class="right-panel">
+
+    <div class="rp-tabs">
+      <div class="rp-tab on"  onclick="switchTab('history',  this)">History</div>
+      <div class="rp-tab"     onclick="switchTab('metrics',  this)">Metrics</div>
+      <div class="rp-tab"     onclick="switchTab('compare',  this)">Compare</div>
+    </div>
+
+    <div class="rp-body">
+
+      <!-- HISTORY -->
+      <div class="tab-panel on" id="tab-history">
+        <div class="hist-empty" id="histEmpty">
+          <div class="hist-empty-icon">◈</div>
+          <div>No calls yet</div>
+          <div style="font-size:10px">Run a tool to see history</div>
+        </div>
+        <div id="histList"></div>
+      </div>
+
+      <!-- METRICS -->
+      <div class="tab-panel" id="tab-metrics">
+        <div class="metrics-panel">
+
+          <div class="metric-block">
+            <div class="metric-block-title">Session Overview</div>
+            <div class="metric-grid">
+              <div class="metric-card">
+                <div class="mc-val a" id="mCalls">0</div>
+                <div class="mc-lbl">Total Calls</div>
+              </div>
+              <div class="metric-card">
+                <div class="mc-val g" id="mSuccess">—</div>
+                <div class="mc-lbl">Success Rate</div>
+              </div>
+              <div class="metric-card">
+                <div class="mc-val b" id="mAvgLat">—</div>
+                <div class="mc-lbl">Avg Latency</div>
+              </div>
+              <div class="metric-card">
+                <div class="mc-val w" id="mTokens">0</div>
+                <div class="mc-lbl">Tokens Used</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric-block">
+            <div class="metric-block-title">Latency — last 10 calls</div>
+            <div class="lat-chart-wrap">
+              <div class="lat-chart-title">
+                ms
+                <span id="latPeak">peak: —</span>
+              </div>
+              <div class="bar-row" id="barRow">
+                <div style="color:var(--text-lo);font-size:10px;align-self:center;width:100%;text-align:center">no data</div>
+              </div>
+              <div class="bar-axis">
+                <span id="axisOld">—</span>
+                <span id="axisNew">now</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric-block">
+            <div class="metric-block-title">Tool Usage</div>
+            <div class="usage-list" id="usageList">
+              <div style="color:var(--text-lo);font-size:11px">No data yet</div>
+            </div>
+          </div>
+
+          <div class="metric-block">
+            <div class="metric-block-title">Cost Breakdown</div>
+            <div class="cost-rows" id="costRows">
+              <div style="color:var(--text-lo);font-size:11px">No data yet</div>
+            </div>
+            <div class="cost-total" id="costTotal" style="display:none">
+              <span class="ct-label">Session Total</span>
+              <span class="ct-val" id="costTotalVal">$0.0000</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- COMPARE -->
+      <div class="tab-panel" id="tab-compare">
+        <div class="compare-panel">
+
+          <div class="cmp-desc">
+            Compare two call sessions side-by-side. Spot response drift, latency changes, and cost differences.
+          </div>
+
+          <div class="cmp-selectors">
+            <div class="cmp-sel-card">
+              <div class="csc-label">Session A</div>
+              <div class="csc-val">4f8a2c — today</div>
+            </div>
+            <div class="cmp-sel-card">
+              <div class="csc-label">Session B</div>
+              <div class="csc-val">3d71ab — yesterday</div>
+            </div>
+          </div>
+
+          <div class="cmp-diff">
+            <div class="diff-title">Diff · generate-exploit</div>
+
+            <div class="diff-row">
+              <div class="diff-key">status</div>
+              <div class="diff-a">200 OK</div>
+              <div class="diff-b">200 OK</div>
+            </div>
+
+            <div class="diff-row">
+              <div class="diff-key">latency</div>
+              <div class="diff-a">342 ms</div>
+              <div class="diff-b">418 ms</div>
+            </div>
+
+            <div class="diff-row">
+              <div class="diff-key">tokens</div>
+              <div class="diff-a">1 847</div>
+              <div class="diff-b">2 103</div>
+            </div>
+
+            <div class="diff-row">
+              <div class="diff-key">cost</div>
+              <div class="diff-a">$0.0028</div>
+              <div class="diff-b">$0.0032</div>
+            </div>
+
+            <div class="diff-row">
+              <div class="diff-key">technique</div>
+              <div class="diff-a">JNDI Injection</div>
+              <div class="diff-b">JNDI Injection</div>
+            </div>
+
+            <div class="diff-row">
+              <div class="diff-key">detection</div>
+              <div class="diff-a">LOW</div>
+              <div class="diff-b">MEDIUM</div>
+            </div>
+          </div>
+
+          <div class="cmp-run-btn">▶ RUN COMPARISON</div>
+
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+</div>
+
+<!-- ══ DATA & LOGIC ══ -->
+<script>
+// ── Tool definitions ──────────────────────────────────────────────
+const TOOLS = {
+  'generate-exploit': {
+    desc: 'Generates exploit code using AI analysis. Supports EDR evasion prompts, LOLBins prioritization, and risk-level gating.',
+    params: [
+      { name:'target',         type:'string',  req:true,  ph:'10.10.11.100',             val:'10.10.11.100' },
+      { name:'vulnerability',  type:'string',  req:true,  ph:'CVE-2021-44228',           val:'CVE-2021-44228' },
+      { name:'risk_level',     type:'select',  req:false, opts:['low','medium','high'],   val:'medium' },
+      { name:'opsec_mode',     type:'select',  req:false, opts:['false','true'],          val:'true' },
+      { name:'lolbins_priority',type:'select', req:false, opts:['false','true'],          val:'true' },
+      { name:'context',        type:'string',  req:false, ph:'Windows Server 2019, EDR: CrowdStrike', val:'' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"success"</span>,
+  <span class="jk">"technique"</span>: <span class="js">"JNDI Injection via Log4j"</span>,
+  <span class="jk">"opsec_notes"</span>: <span class="js">"certutil LOLBin for staging — avoids meterpreter signatures"</span>,
+  <span class="jk">"lolbins_used"</span>: <span class="jbr">[</span><span class="js">"certutil"</span>, <span class="js">"bitsadmin"</span><span class="jbr">]</span>,
+  <span class="jk">"estimated_detection_risk"</span>: <span class="js">"LOW"</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>,
+  <span class="jk">"tokens_used"</span>: <span class="jn">1847</span>,
+  <span class="jk">"cost_usd"</span>: <span class="jn">0.0028</span>
+<span class="jbr">}</span>`, cost: 0.0028, tokens: 1847,
+  },
+  'analyze-source': {
+    desc: 'Analyzes web source HTML for vulnerabilities, exposed endpoints, and attack surface.',
+    params: [
+      { name:'url',          type:'string', req:true,  ph:'http://10.10.11.100/', val:'' },
+      { name:'html_content', type:'string', req:false, ph:'Raw HTML (stdin mode)',val:'' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"success"</span>,
+  <span class="jk">"findings"</span>: <span class="jbr">[</span>
+    <span class="js">"Exposed /admin route"</span>,
+    <span class="js">"jQuery 1.8.3 — known XSS"</span>
+  <span class="jbr">]</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>,
+  <span class="jk">"cost_usd"</span>: <span class="jn">0.0011</span>
+<span class="jbr">}</span>`, cost: 0.0011, tokens: 820,
+  },
+  'cve-to-poc': {
+    desc: 'Converts a CVE identifier to a working proof-of-concept exploit via AI + KB lookup.',
+    params: [
+      { name:'cve_id',    type:'string', req:true,  ph:'CVE-2021-41773', val:'' },
+      { name:'target_os', type:'select', req:false, opts:['auto','linux','windows'], val:'auto' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"success"</span>,
+  <span class="jk">"cve"</span>: <span class="js">"CVE-2021-41773"</span>,
+  <span class="jk">"poc_source"</span>: <span class="js">"kb_hit"</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>,
+  <span class="jk">"cost_usd"</span>: <span class="jn">0.0000</span>
+<span class="jbr">}</span>`, cost: 0, tokens: 0,
+  },
+  'htb-advisor': {
+    desc: 'Provides HTB attack path guidance and rabbit hole detection based on discovered services.',
+    params: [
+      { name:'target',     type:'string', req:true,  ph:'10.10.11.58', val:'' },
+      { name:'open_ports', type:'string', req:false, ph:'22,80,443',   val:'' },
+      { name:'os_hint',    type:'string', req:false, ph:'windows / linux', val:'' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"success"</span>,
+  <span class="jk">"priority_vector"</span>: <span class="js">"HTTP 80 — enumerate directories"</span>,
+  <span class="jk">"rabbit_holes"</span>: <span class="jbr">[</span><span class="js">"port 443 — self-signed, low value"</span><span class="jbr">]</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>,
+  <span class="jk">"cost_usd"</span>: <span class="jn">0.0018</span>
+<span class="jbr">}</span>`, cost: 0.0018, tokens: 1200,
+  },
+  'nmap-scan': {
+    desc: 'Port scanner with normal / stealth (-T1) / fw_bypass / udp modes. Note: stealth is very slow.',
+    params: [
+      { name:'target', type:'string', req:true,  ph:'10.10.11.100', val:'' },
+      { name:'mode',   type:'select', req:false, opts:['normal','stealth','fw_bypass','udp'], val:'normal' },
+      { name:'ports',  type:'string', req:false, ph:'22,80,443 or - for all', val:'' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"success"</span>,
+  <span class="jk">"open_ports"</span>: <span class="jbr">[</span><span class="jn">22</span>, <span class="jn">80</span>, <span class="jn">8080</span><span class="jbr">]</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>,
+  <span class="jk">"cost_usd"</span>: <span class="jn">0</span>
+<span class="jbr">}</span>`, cost: 0, tokens: 0,
+  },
+  'full-chain-exploit': {
+    desc: 'Orchestrates end-to-end exploit chain: recon → exploit → post-exploitation.',
+    params: [
+      { name:'target',         type:'string', req:true,  ph:'10.10.11.100', val:'' },
+      { name:'goal',           type:'string', req:false, ph:'root.txt',     val:'root.txt' },
+      { name:'cost_limit_usd', type:'string', req:false, ph:'2.0',          val:'2.0' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"running"</span>,
+  <span class="jk">"agent_id"</span>: <span class="js">"agent-20260315-abc"</span>,
+  <span class="jk">"iteration"</span>: <span class="jn">1</span>,
+  <span class="jk">"cost_so_far"</span>: <span class="jn">0.0045</span>
+<span class="jbr">}</span>`, cost: 0.0045, tokens: 2100,
+  },
+  'enrich-cves': {
+    desc: 'Enriches CVE list with CVSS scores from NVD API. Sends Discord alert for CVSS ≥ 9.0.',
+    params: [
+      { name:'cve_ids', type:'string', req:true,  ph:'CVE-2021-44228, CVE-2021-41773', val:'CVE-2021-44228' },
+      { name:'verbose', type:'select', req:false, opts:['false','true'], val:'false' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"CVE-2021-44228"</span>: <span class="jbr">{</span>
+    <span class="jk">"cvss_v3"</span>: <span class="jn">10.0</span>,
+    <span class="jk">"severity"</span>: <span class="js">"CRITICAL"</span>,
+    <span class="jk">"discord_alerted"</span>: <span class="jb">true</span>
+  <span class="jbr">}</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>
+<span class="jbr">}</span>`, cost: 0, tokens: 0,
+  },
+  'cloud-scan': {
+    desc: 'Audits AWS / GCP / Azure cloud configuration using ScoutSuite 5.14.0.',
+    params: [
+      { name:'provider',   type:'select', req:true,  opts:['aws','gcp','azure'],    val:'aws' },
+      { name:'access_key', type:'string', req:false, ph:'AKIA...',                  val:'' },
+      { name:'secret_key', type:'string', req:false, ph:'AWS secret key',           val:'' },
+      { name:'project_id', type:'string', req:false, ph:'GCP project ID',           val:'' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"success"</span>,
+  <span class="jk">"provider"</span>: <span class="js">"aws"</span>,
+  <span class="jk">"findings"</span>: <span class="jn">14</span>,
+  <span class="jk">"critical"</span>: <span class="jn">2</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>
+<span class="jbr">}</span>`, cost: 0, tokens: 0,
+  },
+  'attack-suggest': {
+    desc: 'Multi-AI (Claude + Gemini + GPT-4o-mini) attack strategy generation with consensus scoring.',
+    params: [
+      { name:'target',       type:'string', req:true,  ph:'10.10.11.100', val:'' },
+      { name:'scan_results', type:'string', req:false, ph:'nmap output',  val:'' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"consensus"</span>: <span class="js">"HTTP 80 → SQLi → RCE"</span>,
+  <span class="jk">"agreement_score"</span>: <span class="jn">0.87</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>,
+  <span class="jk">"cost_usd"</span>: <span class="jn">0.0034</span>
+<span class="jbr">}</span>`, cost: 0.0034, tokens: 1950,
+  },
+  'msf-execute': {
+    desc: 'Runs Metasploit auxiliary scanner modules via Docker container (msf-tools image).',
+    params: [
+      { name:'target', type:'string', req:true,  ph:'10.10.11.100',          val:'' },
+      { name:'module', type:'string', req:false, ph:'scanner/portscan/tcp',   val:'' },
+    ],
+    mockResp: (ms) => `<span class="jbr">{</span>
+  <span class="jk">"status"</span>: <span class="js">"success"</span>,
+  <span class="jk">"results"</span>: <span class="js">"tcp open ports: 22,80,443"</span>,
+  <span class="jk">"execution_time_ms"</span>: <span class="jn">${ms}</span>
+<span class="jbr">}</span>`, cost: 0, tokens: 0,
+  },
+};
+
+// ── State ─────────────────────────────────────────────────────────
+let currentTool = 'generate-exploit';
+let sessionCost = 0;
+let sessionTokens = 0;
+let callHistory = [];   // { tool, ms, ok, cost, tokens, time }
+let toolUsage = {};     // tool → count
+let toolCost  = {};     // tool → total cost
+
+// ── Init ──────────────────────────────────────────────────────────
+renderParams(currentTool);
+
+function renderParams(toolId) {
+  const tool = TOOLS[toolId];
+  const body = document.getElementById('paramsBody');
+  body.innerHTML = '';
+  tool.params.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'param-item' + (p.req ? ' req' : '');
+
+    const typeClass = { string:'pt-str', select:'pt-str', number:'pt-num', boolean:'pt-bool' }[p.type] || 'pt-str';
+
+    let inputHtml;
+    if (p.type === 'select') {
+      inputHtml = `<select class="pi-input" style="appearance:none;cursor:pointer">
+        ${p.opts.map(o => `<option${o===p.val?' selected':''}>${o}</option>`).join('')}
+      </select>`;
+    } else {
+      inputHtml = `<input class="pi-input" placeholder="${p.ph||''}" value="${p.val||''}">`;
+    }
+
+    div.innerHTML = `
+      <div class="pi-name">${p.name}${p.req ? '<span class="pi-req">*</span>' : ''}</div>
+      <div class="pi-type ${typeClass}">${p.type === 'select' ? 'enum' : p.type}</div>
+      ${inputHtml}
+    `;
+    body.appendChild(div);
+  });
+}
+
+// ── Tool selection ────────────────────────────────────────────────
+function pickTool(el, id) {
+  document.querySelectorAll('.tool-row').forEach(r => r.classList.remove('sel'));
+  el.classList.add('sel');
+  currentTool = id;
+  const t = TOOLS[id];
+  document.getElementById('toolName').textContent = id;
+  document.getElementById('toolDesc').textContent = t.desc;
+  renderParams(id);
+  document.getElementById('respBody').innerHTML =
+    '<div style="color:var(--text-lo);font-size:11px;padding-top:8px">// Press RUN to execute the tool</div>';
+}
+
+// ── Run ───────────────────────────────────────────────────────────
+function runTool() {
+  const tool = TOOLS[currentTool];
+  const rw = document.getElementById('runningWrap');
+  const rb = document.getElementById('respBody');
+
+  rw.style.display = 'flex';
+  rb.innerHTML = '';
+
+  const delay = 280 + Math.random() * 700;
+
+  setTimeout(() => {
+    rw.style.display = 'none';
+    const ms = Math.round(delay);
+    const ok = Math.random() > 0.1;
+
+    // banner
+    const banner = document.createElement('div');
+    banner.className = 'resp-banner ' + (ok ? 'ok' : 'err');
+    banner.innerHTML = `
+      <span class="resp-code">${ok ? '200 OK' : '500 Error'}</span>
+      <span class="resp-tool">${currentTool}</span>
+      <div class="resp-meta">
+        <span>${ms}ms</span>
+        <span>${tool.tokens > 0 ? tool.tokens + ' tok' : '—'}</span>
+        <span>${tool.cost > 0 ? '$' + tool.cost.toFixed(4) : '$0'}</span>
+      </div>
+    `;
+    rb.appendChild(banner);
+
+    // json
+    const jv = document.createElement('div');
+    jv.className = 'json-view';
+    jv.innerHTML = ok ? tool.mockResp(ms) :
+      `<span class="jbr">{</span>\n  <span class="jk">"error"</span>: <span class="js">"Internal server error"</span>\n<span class="jbr">}</span>`;
+    rb.appendChild(jv);
+
+    // update state
+    if (ok) {
+      sessionCost   += tool.cost;
+      sessionTokens += tool.tokens;
+      toolUsage[currentTool] = (toolUsage[currentTool] || 0) + 1;
+      toolCost[currentTool]  = (toolCost[currentTool]  || 0) + tool.cost;
+    }
+
+    callHistory.unshift({ tool: currentTool, ms, ok, cost: tool.cost, tokens: tool.tokens, time: new Date() });
+    if (callHistory.length > 20) callHistory.pop();
+
+    // update status bar
+    document.getElementById('sbCost').textContent = `session: $${sessionCost.toFixed(4)}`;
+
+    // update UI panels
+    updateHistory();
+    updateMetrics();
+
+  }, delay);
+}
+
+// ── History tab ───────────────────────────────────────────────────
+function updateHistory() {
+  const list  = document.getElementById('histList');
+  const empty = document.getElementById('histEmpty');
+  if (callHistory.length > 0) empty.style.display = 'none';
+  list.innerHTML = '';
+
+  callHistory.forEach((c, i) => {
+    const t = c.time.toTimeString().slice(0, 8);
+    const el = document.createElement('div');
+    el.className = 'hist-entry' + (i === 0 ? ' active flash' : '');
+    el.innerHTML = `
+      <div class="he-top">
+        <span class="he-name">${c.tool}</span>
+        <span class="he-status ${c.ok ? 'ok' : 'err'}">${c.ok ? '200' : '500'}</span>
+      </div>
+      <div class="he-mid">
+        <span>${t}</span>
+        <span class="he-latency">${c.ms}ms</span>
+      </div>
+      <div class="he-preview">${c.cost > 0 ? '$' + c.cost.toFixed(4) + ' · ' : ''}${c.tokens > 0 ? c.tokens + ' tokens' : 'no AI call'}</div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+// ── Metrics tab ───────────────────────────────────────────────────
+function updateMetrics() {
+  const n = callHistory.length;
+  if (n === 0) return;
+
+  const ok  = callHistory.filter(c => c.ok).length;
+  const lat = callHistory.map(c => c.ms);
+  const avg = Math.round(lat.reduce((a,b)=>a+b,0) / n);
+
+  document.getElementById('mCalls').textContent   = n;
+  document.getElementById('mSuccess').textContent = Math.round((ok/n)*100) + '%';
+  document.getElementById('mAvgLat').textContent  = avg + 'ms';
+  document.getElementById('mTokens').textContent  = sessionTokens.toLocaleString();
+
+  // bar chart
+  const barRow  = document.getElementById('barRow');
+  const recent  = callHistory.slice(0, 10).reverse();
+  const maxLat  = Math.max(...recent.map(c => c.ms), 1);
+  barRow.innerHTML = '';
+  recent.forEach((c, i) => {
+    const b = document.createElement('div');
+    b.className = 'lbar' + (i === recent.length-1 ? ' cur' : '') + (!c.ok ? ' err-bar' : '');
+    b.style.height = Math.max(4, (Math.min(c.ms,2000)/maxLat)*56) + 'px';
+    b.title = c.tool + ': ' + c.ms + 'ms';
+    barRow.appendChild(b);
+  });
+  document.getElementById('latPeak').textContent = 'peak: ' + Math.max(...lat) + 'ms';
+  document.getElementById('axisOld').textContent = recent.length > 1
+    ? recent[0].time.toTimeString().slice(0,5) : '—';
+
+  // usage bars
+  const usageList = document.getElementById('usageList');
+  usageList.innerHTML = '';
+  const sorted = Object.entries(toolUsage).sort((a,b)=>b[1]-a[1]);
+  const maxU = sorted[0]?.[1] || 1;
+  sorted.forEach(([name, cnt]) => {
+    const pct = Math.round((cnt/maxU)*100);
+    const row = document.createElement('div');
+    row.className = 'usage-row';
+    row.innerHTML = `
+      <div class="ur-top"><span>${name}</span><span class="ur-n">${cnt}x</span></div>
+      <div class="ur-track"><div class="ur-fill" style="width:${pct}%"></div></div>
+    `;
+    usageList.appendChild(row);
+  });
+
+  // cost breakdown
+  const costRows = document.getElementById('costRows');
+  const costTotal = document.getElementById('costTotal');
+  costRows.innerHTML = '';
+  const sortedC = Object.entries(toolCost).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  if (sortedC.length > 0) {
+    sortedC.forEach(([name, cost]) => {
+      const row = document.createElement('div');
+      row.className = 'cost-row';
+      row.innerHTML = `<span class="cr-tool">${name}</span><span class="cr-cost">$${cost.toFixed(4)}</span>`;
+      costRows.appendChild(row);
+    });
+    costTotal.style.display = 'flex';
+    document.getElementById('costTotalVal').textContent = '$' + sessionCost.toFixed(4);
+  } else {
+    costRows.innerHTML = '<div style="color:var(--text-lo);font-size:11px">No cost yet (free tools only)</div>';
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────
+function switchTab(id, el) {
+  document.querySelectorAll('.rp-tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('tab-' + id).classList.add('on');
+}
+
+// ── Transport toggle ──────────────────────────────────────────────
+function setTransport(el, label) {
+  document.querySelectorAll('.tp-btn').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('sbTransport').textContent = label === 'HTTP' ? 'Streamable HTTP' : label;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function clearParams() {
+  document.querySelectorAll('.pi-input').forEach(i => {
+    if (i.tagName === 'INPUT') i.value = '';
+  });
+}
+
+function fillExample() {
+  const tool = TOOLS[currentTool];
+  const inputs = document.querySelectorAll('.pi-input');
+  tool.params.forEach((p, i) => {
+    if (inputs[i] && inputs[i].tagName === 'INPUT' && p.ph) inputs[i].value = p.ph;
+  });
+}
+
+function copyJSON() {
+  const tool = TOOLS[currentTool];
+  const inputs = document.querySelectorAll('.pi-input');
+  const obj = {};
+  tool.params.forEach((p, i) => { if (inputs[i]) obj[p.name] = inputs[i].value; });
+  navigator.clipboard?.writeText(JSON.stringify(obj, null, 2));
+}
+
+function copyResp() {
+  navigator.clipboard?.writeText(document.getElementById('respBody')?.innerText || '');
+}
+</script>
+</body>
+</html>

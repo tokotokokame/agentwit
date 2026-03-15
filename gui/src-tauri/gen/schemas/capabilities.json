@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","http:default",{"identifier":"http:allow-fetch","allow":[{"url":"http://localhost:*/**"},{"url":"https://**"}]}]}}

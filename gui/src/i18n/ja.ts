@@ -1,0 +1,152 @@
+import type { Translations } from './en';
+
+export const ja: Translations = {
+  // App
+  appTitle: 'MCP インスペクター',
+
+  // Connection Panel
+  connection: {
+    title: '接続',
+    configure: '接続設定',
+    transport: 'トランスポート種別',
+    transportStdio: 'stdio',
+    transportHttp: 'HTTP',
+    transportSse: 'SSE',
+    command: 'コマンド',
+    commandPlaceholder: '例: node, python, npx',
+    args: '引数',
+    argsPlaceholder: '例: server.js --port 8080',
+    url: 'URL',
+    urlPlaceholder: 'https://example.com/mcp',
+    headers: 'ヘッダー (JSON)',
+    headersPlaceholder: '{"Authorization": "Bearer トークン"}',
+    connect: '接続',
+    disconnect: '切断',
+    connecting: '接続中...',
+    connected: '接続済み',
+    disconnected: '未接続',
+    error: '接続エラー',
+    close: '閉じる',
+  },
+
+  // Tool List
+  tools: {
+    title: 'ツール',
+    search: 'ツールを検索...',
+    noTools: '利用可能なツールがありません',
+    noResults: '検索条件に一致するツールがありません',
+    connect: 'MCPサーバーに接続するとツールが表示されます',
+    count: (n: number) => `${n} 個のツール`,
+    server: 'サーバー',
+    statusLabel: 'ステータス',
+    protocolLabel: 'プロトコル',
+  },
+
+  // Execution Panel
+  execution: {
+    title: '実行',
+    selectTool: '左のパネルからツールを選択してください',
+    parameters: 'パラメーター',
+    parametersHint: 'JSONまたは以下のフォームでパラメーターを入力',
+    run: 'RUN',
+    execute: '実行',
+    executing: '実行中...',
+    response: 'レスポンス',
+    noResponse: 'レスポンスなし',
+    pressRunHint: '// RUNボタンを押してツールを実行',
+    copyJson: 'JSONコピー',
+    schema: 'スキーマ',
+    duration: '処理時間',
+    ms: 'ミリ秒',
+    error: 'エラー',
+    success: '成功',
+    copyResponse: 'コピー',
+    copied: 'コピー完了！',
+    clearResponse: 'クリア',
+    clearParams: 'クリア',
+    required: '必須',
+    optional: '任意',
+  },
+
+  // History Tab
+  history: {
+    title: '履歴',
+    empty: '実行履歴がありません',
+    runHint: 'ツールを実行すると履歴が表示されます',
+    clear: '履歴をクリア',
+    tool: 'ツール',
+    status: 'ステータス',
+    timestamp: '時刻',
+    duration: '処理時間',
+    params: 'パラメーター',
+    response: 'レスポンス',
+    error: 'エラー',
+    success: '成功',
+    expand: '詳細を表示',
+    collapse: '詳細を非表示',
+    rerun: '再実行',
+  },
+
+  // Metrics Tab
+  metrics: {
+    title: 'メトリクス',
+    empty: 'メトリクスデータがありません',
+    sessionOverview: 'セッション概要',
+    latencyLast: (n: number) => `レイテンシ — 直近${n}回`,
+    noData: 'データなし',
+    now: '現在',
+    peak: 'ピーク',
+    totalCalls: '総呼び出し回数',
+    successRate: '成功率',
+    avgLatency: '平均レイテンシ',
+    lastCall: '最終呼び出し',
+    perTool: 'ツール別呼び出し回数',
+    never: 'なし',
+    ms: 'ms',
+    calls: '回',
+  },
+
+  // Compare Tab
+  compare: {
+    title: '比較',
+    selectFirst: '最初のエントリを選択',
+    selectSecond: '2番目のエントリを選択',
+    noHistory: '比較する履歴エントリがありません',
+    diff: '差分',
+    noDiff: '差分なし',
+    left: '左',
+    right: '右',
+    added: '追加',
+    removed: '削除',
+    same: 'レスポンスは同一です',
+    linesDiffer: (n: number) => `${n}行が異なります`,
+  },
+
+  // Status Bar
+  statusBar: {
+    connected: '接続済み',
+    disconnected: '未接続',
+    connecting: '接続中',
+    error: 'エラー',
+    transport: 'トランスポート',
+    tools: 'ツール',
+    auditLog: '監査ログ',
+    auditLogOn: 'ON',
+    auditLogOff: 'OFF',
+  },
+
+  // General
+  general: {
+    yes: 'はい',
+    no: 'いいえ',
+    ok: 'OK',
+    cancel: 'キャンセル',
+    close: '閉じる',
+    copy: 'コピー',
+    clear: 'クリア',
+    loading: '読み込み中...',
+    error: 'エラー',
+    success: '成功',
+    unknown: '不明',
+  },
+};
