@@ -72,3 +72,4 @@ witness_logs/
 *.key
 secrets.json
 gui/src-tauri/target/
+gui/src-tauri/target/
