@@ -8,6 +8,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-48%20passing-brightgreen.svg)](#)
 
+## Articles
+- 📝 [AIエージェントの「証人」を作った——設計思想（Zenn）](https://zenn.dev/tokotokokame/articles/bba6a258a458a1)
+
 ## What is agentwit?
 
 agentwit is a transparent proxy that sits between AI agents and MCP servers,
