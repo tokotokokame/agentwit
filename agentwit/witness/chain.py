@@ -49,7 +49,8 @@ class ChainManager:
             A new dict with ``witness_id`` and ``session_chain`` added.
         """
         # Strip any previously-set chain fields to get a clean base.
-        base = {k: v for k, v in event_data.items() if k not in ("witness_id", "session_chain")}
+        base = {k: v for k, v in event_data.items()
+                if k not in ("witness_id", "session_chain", "signature", "signed_by")}
 
         # Compute chain hash from canonical JSON of the base event.
         event_hash = self._compute_event_hash(base)
@@ -91,7 +92,8 @@ class ChainManager:
             session_chain = event.get("session_chain", "")
 
             # Re-derive the base event (strip chain fields) to recompute hashes.
-            base = {k: v for k, v in event.items() if k not in ("witness_id", "session_chain")}
+            base = {k: v for k, v in event.items()
+                    if k not in ("witness_id", "session_chain", "signature", "signed_by")}
             event_hash = self._compute_event_hash(base)
             expected_chain = self._compute_chain_hash(expected_prev, event_hash)
 

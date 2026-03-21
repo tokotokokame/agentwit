@@ -1,7 +1,9 @@
 """Cost and rate-limit guard for MCP sessions."""
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any
 
 
@@ -80,4 +82,39 @@ class CostGuard:
                 ),
             })
 
+        return alerts
+
+
+class AnomalyDetector:
+    def __init__(self):
+        self._call_times: deque = deque(maxlen=100)
+        self._tool_counts: dict = {}
+
+    def record_call(self, tool_name: str):
+        self._call_times.append(datetime.utcnow())
+        self._tool_counts[tool_name] = self._tool_counts.get(tool_name, 0) + 1
+
+    def check_anomalies(self) -> list:
+        alerts = []
+        now = datetime.utcnow()
+
+        # 直近1分間の呼び出し数
+        recent = [t for t in self._call_times
+                  if now - t < timedelta(minutes=1)]
+        if len(recent) > 30:
+            alerts.append({
+                "type":      "call_rate_anomaly",
+                "severity":  "HIGH",
+                "calls_per_minute": len(recent)
+            })
+
+        # 同一ツールへの連続呼び出し
+        for tool, count in self._tool_counts.items():
+            if count > 10:
+                alerts.append({
+                    "type":     "repeated_tool_call",
+                    "severity": "MEDIUM",
+                    "tool":     tool,
+                    "count":    count
+                })
         return alerts

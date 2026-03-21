@@ -153,8 +153,9 @@ class TestSendSafe:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch("agentwit.notifier.webhook.httpx") as mock_httpx:
-            mock_httpx.AsyncClient = MagicMock(return_value=mock_client)
+        # httpx は _send() 内でローカル import されているため
+        # モジュール属性ではなく httpx.AsyncClient を直接パッチする
+        with patch("httpx.AsyncClient", return_value=mock_client):
             await n._send(_event(), "high", "shell_exec", _indicators())
             mock_client.post.assert_awaited_once()
             call_args = mock_client.post.call_args

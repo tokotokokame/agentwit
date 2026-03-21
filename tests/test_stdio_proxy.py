@@ -1,7 +1,6 @@
 """Tests for proxy/stdio_proxy.py"""
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -100,24 +99,20 @@ class TestLogMessage:
 class TestRunStdioProxy:
     @pytest.mark.asyncio
     async def test_echo_command(self, tmp_path):
-        """Integration test: proxy wraps 'echo hello' and logs the output."""
+        """run() returns 0 for a process that exits cleanly.
+
+        _proxy_stdin は実際の stdin に接続しようとしてハングするため
+        AsyncMock で差し替え、サブプロセスの起動と終了のみ検証する。
+        """
         from agentwit.witness.log import WitnessLogger
 
         logger = WitnessLogger(session_dir=str(tmp_path), actor="test")
-
-        # Patch stdin so it closes immediately (EOF)
-        mock_reader = AsyncMock()
-        mock_reader.readline = AsyncMock(side_effect=[b""])
-
-        with patch("agentwit.proxy.stdio_proxy.asyncio.StreamReader", return_value=mock_reader):
-            with patch("agentwit.proxy.stdio_proxy.asyncio.StreamReaderProtocol"):
-                with patch.object(asyncio.get_event_loop(), "connect_read_pipe", new_callable=AsyncMock):
-                    # Run a simple subprocess
-                    proxy = StdioProxy(
-                        command=[sys.executable, "-c", "import sys; sys.exit(0)"],
-                        witness_logger=logger,
-                    )
-                    code = await proxy.run()
+        proxy = StdioProxy(
+            command=[sys.executable, "-c", "import sys; sys.exit(0)"],
+            witness_logger=logger,
+        )
+        with patch.object(proxy, "_proxy_stdin", AsyncMock(return_value=None)):
+            code = await proxy.run()
 
         logger.close()
         assert code == 0
@@ -127,15 +122,10 @@ class TestRunStdioProxy:
         from agentwit.witness.log import WitnessLogger
 
         logger = WitnessLogger(session_dir=str(tmp_path), actor="test")
-        mock_reader = AsyncMock()
-        mock_reader.readline = AsyncMock(side_effect=[b""])
-
-        with patch("agentwit.proxy.stdio_proxy.asyncio.StreamReader", return_value=mock_reader):
-            with patch("agentwit.proxy.stdio_proxy.asyncio.StreamReaderProtocol"):
-                with patch.object(asyncio.get_event_loop(), "connect_read_pipe", new_callable=AsyncMock):
-                    code = await run_stdio_proxy(
-                        [sys.executable, "-c", "import sys; sys.exit(0)"],
-                        logger,
-                    )
+        with patch.object(StdioProxy, "_proxy_stdin", AsyncMock(return_value=None)):
+            code = await run_stdio_proxy(
+                [sys.executable, "-c", "import sys; sys.exit(0)"],
+                logger,
+            )
         logger.close()
         assert code == 0

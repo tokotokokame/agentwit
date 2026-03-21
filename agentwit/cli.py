@@ -91,12 +91,93 @@ def proxy(
     logger = WitnessLogger(session_dir=log_dir, actor=actor)
     click.echo(f"Session: {logger.session_path}")
 
-    app = create_proxy_app(target_url=target, witness_logger=logger, actor=actor)
+    app = create_proxy_app(
+        target_url=target,
+        witness_logger=logger,
+        actor=actor,
+        webhook_url=webhook,
+        webhook_on=webhook_on,
+    )
 
     try:
         uvicorn.run(app, host=host, port=port)
     finally:
         logger.close()
+
+
+# ---------------------------------------------------------------------------
+# verify
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option(
+    "--session",
+    required=True,
+    type=click.Path(exists=True),
+    help="Session directory containing witness.jsonl",
+)
+def verify(session: str) -> None:
+    """Verify SHA-256 chain integrity and ed25519 signatures for a session.
+
+    Example:
+
+        agentwit verify --session ./witness_logs/session_20240101_120000
+    """
+    from .witness.chain import ChainManager
+    from .security.signing import EventSigner
+
+    session_path = Path(session)
+    log_path = session_path / "witness.jsonl"
+
+    if not log_path.exists():
+        click.echo(f"No witness.jsonl found in {session_path}", err=True)
+        sys.exit(1)
+
+    events: list[dict] = []
+    with log_path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                events.append(json.loads(line))
+
+    if not events:
+        click.echo("No events found.")
+        return
+
+    chain = ChainManager(session_id=session_path.name)
+    chain_results = chain.verify_chain(events)
+
+    signer = EventSigner()
+
+    click.echo(f"Session: {session_path.name}  ({len(events)} events)")
+    click.echo(f"Key fingerprint: {signer.fingerprint()}")
+    click.echo("")
+    click.echo(f"{'#':>4}  chain   sig     witness_id")
+    click.echo("-" * 72)
+
+    all_valid = True
+    for idx, (event, cr) in enumerate(zip(events, chain_results)):
+        chain_ok = cr["valid"]
+
+        sig = event.get("signature", "")
+        event_without_sig = {k: v for k, v in event.items()
+                             if k not in ("signature", "signed_by")}
+        sig_ok = signer.verify(event_without_sig, sig) if sig else False
+
+        if not chain_ok or not sig_ok:
+            all_valid = False
+
+        chain_str = click.style("OK  ", fg="green") if chain_ok else click.style("FAIL", fg="red", bold=True)
+        sig_str = click.style("OK  ", fg="green") if sig_ok else click.style("FAIL", fg="red", bold=True)
+        witness_id = event.get("witness_id", "?")
+        click.echo(f"{idx:>4}  {chain_str}  {sig_str}  {witness_id}")
+
+    click.echo("")
+    if all_valid:
+        click.echo(click.style("Result: ALL VALID", fg="green", bold=True))
+    else:
+        click.echo(click.style("Result: INTEGRITY ERROR DETECTED", fg="red", bold=True))
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------

@@ -6,20 +6,32 @@ to the caller without buffering.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import AsyncIterator
 
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
 
+from ..security.bypass_detector import BypassDetector
+from ..monitor.backup import SessionBackup
 from ..witness.log import WitnessLogger
+
+logger = logging.getLogger(__name__)
+
+_AUDIT_PATH = Path.home() / ".agentwit" / "audit.jsonl"
 
 
 def create_proxy_app(
     target_url: str,
     witness_logger: WitnessLogger,
     actor: str = "proxy",
+    webhook_url: str | None = None,
+    webhook_on: str = "HIGH,CRITICAL",
 ) -> FastAPI:
     """Create and return a FastAPI app that transparently proxies to *target_url*.
 
@@ -36,6 +48,7 @@ def create_proxy_app(
     """
     app = FastAPI(title="agentwit proxy", version="0.1.0")
     target = target_url.rstrip("/")
+    bypass_detector = BypassDetector()
 
     # Shared async HTTP client (created at startup, closed at shutdown).
     client: httpx.AsyncClient
@@ -48,6 +61,11 @@ def create_proxy_app(
     @app.on_event("shutdown")
     async def _shutdown() -> None:
         await client.aclose()
+        # セッション終了時に自動バックアップ
+        try:
+            SessionBackup().backup(witness_logger.session_path)
+        except Exception as exc:
+            logger.warning("agentwit session backup failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Single catch-all route
@@ -58,10 +76,32 @@ def create_proxy_app(
         """Forward any request to the upstream server and record the exchange."""
         upstream_url = f"/{path}"
 
+        # バイパス検知: 受信リクエストにプロキシヘッダーがなければ記録
+        bypass_alert = bypass_detector.check_request(dict(request.headers))
+        if bypass_alert:
+            _AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with _AUDIT_PATH.open("a", encoding="utf-8") as _af:
+                _af.write(json.dumps({
+                    **bypass_alert,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "path": f"/{path}",
+                }) + "\n")
+            if webhook_url:
+                from ..notifier.webhook import WebhookNotifier
+                _notifier = WebhookNotifier(url=webhook_url, min_severity="high")
+                asyncio.ensure_future(_notifier.notify_if_threshold(
+                    {"actor": actor, "tool": None,
+                     "session_id": witness_logger.session_id,
+                     "timestamp": datetime.now(timezone.utc).isoformat()},
+                    [{"pattern": "proxy_bypass", "severity": "high", **bypass_alert}],
+                ))
+
         # Build forwarded headers (drop host so httpx sets it correctly).
         forward_headers = {
             k: v for k, v in request.headers.items() if k.lower() != "host"
         }
+        # リクエスト転送時にプロキシヘッダーを付与
+        bypass_detector.inject_header(forward_headers)
 
         body = await request.body()
 

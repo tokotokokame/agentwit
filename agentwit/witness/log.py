@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .chain import ChainManager
+from ..security.signing import EventSigner
 
 
 def _sha256(data: Any) -> str:
@@ -54,6 +55,7 @@ class WitnessLogger:
 
         self.actor = actor
         self.chain = ChainManager(session_id=self.session_id)
+        self._signer = EventSigner()
 
         log_path = self.session_path / "witness.jsonl"
         self._log_file = log_path.open("a", encoding="utf-8")
@@ -84,6 +86,8 @@ class WitnessLogger:
         """
         event = self._build_event(action, tool, full_payload, risk_indicators or [])
         signed = self.chain.sign(event)
+        signed["signature"] = self._signer.sign(signed)
+        signed["signed_by"] = self._signer.fingerprint()
         self._append(signed)
         return signed
 
