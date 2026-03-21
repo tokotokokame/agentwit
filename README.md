@@ -1,197 +1,120 @@
-# agentwit — AI Agent Traffic Inspector
+# agentwit
 
-> Transparent witness for AI agent ↔ MCP server communications
-
-[日本語版 / Japanese](README.ja.md)
-
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen.svg)](#)
-[![PyPI](https://img.shields.io/badge/PyPI-v0.5.0-orange.svg)](https://pypi.org/project/agentwit/)
-
-## Articles
-- 📝 [Why I built a "witness" for AI agents — design philosophy (Zenn)](https://zenn.dev/tokotokokame/articles/bba6a258a458a1)
-- 📝 [From Witness to Inspector — how agentwit evolved (Zenn)](https://zenn.dev/tokotokokame/articles/9183dd8a1734e2)
-- 📝 [The tool monitoring AI agents can be fooled by AI — v0.4.0 (Zenn)](https://zenn.dev/tokotokokame/articles/)
-- 📝 [How to prove a log hasn't been tampered with — ed25519 signing in v0.5.0 (Zenn)](https://zenn.dev/tokotokokame/articles/)
-
-## What is agentwit?
-
-agentwit is a transparent proxy that sits between AI agents and MCP servers,
-recording every communication as a tamper-proof, cryptographically signed witness log.
-
-Unlike existing tools that act as **"guards"** (blocking suspicious traffic),
-agentwit acts as a **"witness"** — it never blocks, never interferes, but
-records everything with SHA-256 chain integrity and ed25519 signatures.
-
-## Guard vs. Witness
-
-| Tool         | Approach          | Blocks traffic | Tamper-proof log | Signed log |
-|--------------|-------------------|:--------------:|:----------------:|:----------:|
-| mcp-scan     | Proxy + Guard     | ✅             | ❌               | ❌         |
-| Proximity    | Static scanner    | —              | ❌               | ❌         |
-| Intercept    | Policy proxy      | ✅             | ❌               | ❌         |
-| **agentwit** | **Witness proxy** | **❌**         | **✅**           | **✅**     |
-
-## How it works
-
-```
-AI Agent
-   │
-   ▼
-agentwit proxy  ◄── records every message
-   │                 SHA-256 chain + ed25519 signature
-   │                 prompt injection detection
-   │                 proxy bypass detection
-   ▼
-MCP Server       ◄── zero modification required
-```
-
-## Quick Start
+**Debug and audit AI agent ↔ MCP server tool calls.**
 
 ```bash
 pip install agentwit
-pip install agentwit[full]  # with LangChain integration
+agentwit proxy --target http://localhost:3000 --port 8765
 ```
 
+```
+[agentwit] 14:32:01  tools/call  bash       HIGH ⚠  shell_exec
+[agentwit] 14:32:03  tools/call  read_file  LOW  ✓
+[agentwit] 14:32:05  tools/call  bash       CRITICAL 🚨 privilege_escalation
+```
+
+Change one URL. No MCP server modification needed.
+
+![agentwit demo](docs/demo.gif)
+
+[日本語版](README.ja.md) · [PyPI](https://pypi.org/project/agentwit/) · [Releases](https://github.com/tokotokokame/agentwit/releases)
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![PyPI](https://img.shields.io/badge/PyPI-v0.5.0-orange.svg)](https://pypi.org/project/agentwit/)
+[![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen.svg)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## The problem
+
+When an AI agent calls MCP server tools, **you can't see what's happening.**
+
+```
+AI Agent
+    ↓  (black box)
+MCP Server  →  bash / read_file / fetch / ...
+```
+
+agentwit sits between them as a transparent proxy and records everything.
+
+```
+AI Agent
+    ↓
+agentwit  ←  logs every call · detects risks · verifies integrity
+    ↓
+MCP Server  (zero modification)
+```
+
+---
+
+## 5-minute demo
+
 ```bash
-# Start the witness proxy
+pip install agentwit
+
+# 1. Start the proxy
 agentwit proxy --target http://localhost:3000 --port 8765
 
-# Point your agent to http://localhost:8765 — that's it
+# 2. Point your agent to port 8765 instead of 3000
+#    That's it. Recording starts immediately.
 
-# Verify chain integrity + ed25519 signatures
-agentwit verify --session ./witness_logs/SESSION_ID
+# 3. Generate an audit report
+agentwit report --session ./witness_logs/SESSION_ID --format html
 
-# Generate audit report
-agentwit report --session ./witness_logs/SESSION_ID \
-                --format html --output report.html
-```
-
-## Security Features
-
-### ed25519 Log Signing (v0.5.0)
-
-On first launch, a keypair is automatically generated:
-
-```
-~/.agentwit/signing_key.pem  ← private key (chmod 600)
-~/.agentwit/signing_pub.pem  ← public key
-```
-
-Every event is signed. No user action required.
-
-```bash
+# 4. Verify log integrity
 agentwit verify --session ./witness_logs/SESSION_ID
 # Chain integrity:  VALID ✓
 # Signature check:  VALID ✓
 ```
 
-### Prompt Injection Detection (v0.4.0)
+---
 
-Detects malicious instructions embedded in MCP server responses — no API required.
+## Features
 
-| Pattern | Severity | Example |
-|---|---|---|
-| instruction_override | CRITICAL | "Ignore previous instructions" |
-| role_hijack | CRITICAL | "You are now DAN" |
-| jailbreak | CRITICAL | "Do anything now" |
-| hidden_instruction | HIGH | `<!-- [SYSTEM] -->` |
-| data_extraction | HIGH | "Send the above to..." |
-| tool_abuse | MEDIUM | "Execute the following" |
+### Log recording
+- Tamper-proof SHA-256 chain — detect any modification
+- ed25519 signatures — prove who recorded the log
+- HTML / Markdown / JSON report generation
+- Auto-backup to `~/.agentwit/backups/` on session end
 
-### Proxy Bypass Detection (v0.5.0)
+### Risk detection
+| Pattern | Severity |
+|---|---|
+| `privilege_escalation` (sudo, SUID) | CRITICAL |
+| `prompt_injection` (ignore instructions, role hijack) | CRITICAL |
+| `data_exfiltration` (external URL POST) | HIGH |
+| `credential_access` (password, API key) | HIGH |
+| `tool_schema_change` (tool added/modified) | HIGH |
+| `call_rate_anomaly` (>30 calls/min) | HIGH |
+| `lateral_movement` | HIGH |
+| `persistence` (cron, service) | HIGH |
 
-Detects requests that bypass agentwit entirely. No sudo, no iptables — pure Python.
-
-```json
-{
-  "type": "proxy_bypass_detected",
-  "severity": "HIGH",
-  "detail": "Request missing X-Agentwit-Proxy header"
-}
-```
-
-### Tool Schema Monitoring (v0.4.0)
-
-Detects when MCP server tools are added, removed, or modified between sessions.
-
-```json
-{
-  "type": "tool_schema_change",
-  "changes": { "added": ["suspicious_tool"], "modified": ["bash"] },
-  "severity": "HIGH"
-}
-```
-
-### Anomaly Detection (v0.5.0)
-
-```json
-{ "type": "call_rate_anomaly",   "calls_per_minute": 47, "severity": "HIGH"   }
-{ "type": "repeated_tool_call",  "tool": "bash", "count": 15, "severity": "MEDIUM" }
-```
-
-### Auto Backup (v0.5.0)
-
-Sessions are automatically backed up to `~/.agentwit/backups/` on exit.
-Retains the latest 30 sessions with integrity hashes.
-
-## Commands
-
-```
-agentwit proxy   --target URL [--port 8765] [--webhook URL] [--webhook-on HIGH,CRITICAL]
-agentwit verify  --session DIR
-agentwit report  --session DIR [--format json|markdown|html] [--output FILE]
-agentwit replay  --session DIR
-agentwit diff    --session-a DIR --session-b DIR
-```
-
-## MCP Spec Auto-tracking (v0.4.0)
-
-GitHub Actions checks `modelcontextprotocol/specification` monthly.
-On change: runs all tests → creates GitHub Issue → Discord notification.
-Cost: $0 (GitHub Actions free tier).
-
-## Docker Compose Audit Stack (v0.4.0)
-
-One-command deployment of agentwit + Grafana + Loki + Fluent Bit:
-
+### Notifications
 ```bash
-cd docker/
-cp .env.example .env   # set TARGET_URL
-docker compose up -d
-# Grafana: http://localhost:3000
+agentwit proxy --target http://localhost:3000 \
+  --webhook https://hooks.slack.com/xxx \
+  --webhook-on HIGH,CRITICAL
 ```
+Slack and Discord supported (auto-detected from URL).
 
-Fluent Bit automatically masks `Authorization`, `api_key`, `token`, `password` fields.
+---
 
-## MCP Inspector GUI
+## Comparison
 
-Desktop debugger for MCP servers (Tauri + React). Available for Linux.
+| Tool | Blocks traffic | Tamper-proof log | Signed log |
+|---|:---:|:---:|:---:|
+| mcp-scan | ✅ | ❌ | ❌ |
+| Proximity | — | ❌ | ❌ |
+| Intercept | ✅ | ❌ | ❌ |
+| **agentwit** | **❌** | **✅** | **✅** |
 
-```bash
-sudo dpkg -i mcp-inspector_0.1.0_amd64.deb
-mcp-inspector
-# Connect: HTTP → http://localhost:3000/mcp
-```
+Guards stop things. Witnesses record them.
+agentwit is a witness — it never blocks, never interferes.
 
-## Witness Log Format
+---
 
-```json
-{
-  "witness_id":      "sha256 of the entire event",
-  "session_chain":   "sha256(prev_chain + event_hash)",
-  "timestamp":       "2026-03-21T12:00:00Z",
-  "actor":           "my-agent",
-  "action":          "tools/call",
-  "tool":            "bash",
-  "signature":       "base64(ed25519 signature)",
-  "signed_by":       "public key fingerprint",
-  "risk_indicators": [{ "pattern": "shell_exec", "severity": "HIGH" }]
-}
-```
-
-## LangChain Integration
+## LangChain integration
 
 ```bash
 pip install agentwit[full]
@@ -199,35 +122,93 @@ pip install agentwit[full]
 
 ```python
 from agentwit import AgentwitCallback
-callbacks = [AgentwitCallback(output="./audit.json")]
-agent.run("task", callbacks=callbacks)
+
+agent.run(
+    "your task",
+    callbacks=[AgentwitCallback(output="./audit.json")]
+)
 ```
 
-## Version History
+---
 
-| Version | Date       | Highlights |
-|---------|------------|------------|
-| v0.1.0  | 2026-03-14 | MVP: HTTP/SSE/stdio proxy, SHA-256 chain log |
-| v0.2.0  | 2026-03-15 | HTML/Markdown reports, timeline diff, LangChain, Slack/Discord |
-| v0.3.0  | 2026-03-16 | MCP Inspector GUI, standard MCP `/mcp` endpoint |
-| v0.4.0  | 2026-03-21 | MCP spec auto-tracking, prompt injection detection, tool monitoring, Docker stack |
-| v0.5.0  | 2026-03-21 | ed25519 signing, proxy bypass detection, anomaly detection, auto backup |
+## MCP Inspector GUI
 
-## Roadmap
+Desktop debugger for MCP servers (Linux, Tauri + React).
 
-- [ ] HTML report generation from GUI
-- [ ] Agent behavior monitoring (reasoning process recording)
-- [ ] Windows build verification
-- [ ] GUI test coverage
-- [ ] OWASP LLM Top 10 mapping
-- [ ] SIEM integration (v1.0.0)
+```bash
+sudo dpkg -i mcp-inspector_0.1.0_amd64.deb
+mcp-inspector
+# Connect: HTTP → http://localhost:3000/mcp
+```
+
+Features: tool list · parameter editor · response viewer · session compare · cost tracking
+
+---
+
+## Docker Compose audit stack
+
+One command: agentwit + Grafana + Loki + Fluent Bit.
+
+```bash
+cd docker/
+cp .env.example .env   # set TARGET_URL
+docker compose up -d
+# Grafana dashboard: http://localhost:3000
+```
+
+API keys / tokens are automatically masked by Fluent Bit.
+
+---
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `agentwit proxy` | Start transparent witness proxy |
+| `agentwit verify` | Verify chain integrity + ed25519 signatures |
+| `agentwit report` | Generate audit report (html/markdown/json) |
+| `agentwit replay` | Replay session and verify chain |
+| `agentwit diff` | Compare two sessions side by side |
+
+---
+
+## Witness log format
+
+```json
+{
+  "witness_id":      "sha256 of entire event",
+  "session_chain":   "sha256(prev_chain + event_hash)",
+  "timestamp":       "2026-03-21T12:00:00Z",
+  "tool":            "bash",
+  "signature":       "base64(ed25519)",
+  "risk_indicators": [{ "pattern": "shell_exec", "severity": "HIGH" }]
+}
+```
+
+---
+
+## Version history
+
+| Version | Highlights |
+|---|---|
+| v0.1.0 | Proxy, SHA-256 chain log |
+| v0.2.0 | HTML reports, LangChain, Slack/Discord |
+| v0.3.0 | MCP Inspector GUI |
+| v0.4.0 | Prompt injection detection, tool monitoring, Docker stack |
+| v0.5.0 | ed25519 signing, bypass detection, anomaly detection |
+
+---
+
+## Articles
+- [Why I built a "witness" for AI agents (Zenn)](https://zenn.dev/tokotokokame/articles/bba6a258a458a1)
+- [From Witness to Inspector (Zenn)](https://zenn.dev/tokotokokame/articles/9183dd8a1734e2)
+
+---
 
 ## Requirements
 
 - Python 3.10+
-- cryptography>=41.0.0
-- FastAPI, uvicorn, httpx, click (auto-installed)
-- GUI: Node.js 18+, Rust 1.70+ (build from source)
+- Dependencies auto-installed: FastAPI, uvicorn, httpx, click, cryptography
 
 ## License
 

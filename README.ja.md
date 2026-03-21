@@ -1,177 +1,116 @@
 # agentwit
 
-> AIエージェントとMCPサーバー間の通信を記録する透過型Witnessプロキシ
-
-[English](README.md)
-
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen.svg)](#)
-[![PyPI](https://img.shields.io/badge/PyPI-v0.5.0-orange.svg)](https://pypi.org/project/agentwit/)
-
-## 記事
-- 📝 [AIエージェントの「証人」を作った——設計思想（Zenn）](https://zenn.dev/tokotokokame/articles/bba6a258a458a1)
-- 📝 [「公証人」はなぜデバッガーに進化したのか——v0.3.0（Zenn）](https://zenn.dev/tokotokokame/articles/9183dd8a1734e2)
-- 📝 [監視ツールがAIに騙される話——v0.4.0（Zenn）](https://zenn.dev/tokotokokame/articles/)
-- 📝 [「ログを信頼できるか」——ed25519署名でv0.5.0（Zenn）](https://zenn.dev/tokotokokame/articles/)
-
-## agentwit とは？
-
-AIエージェントとMCPサーバーの間に置く透過型プロキシです。
-すべての通信をSHA-256チェーン＋ed25519署名付きで記録します。
-
-不審なトラフィックをブロックする **「ガード」** 型の既存ツールとは異なり、
-agentwit は **「証人（Witness）」** として動作します。
-
-## Guard vs. Witness
-
-| ツール       | アプローチ          | 通信ブロック | 改ざん検知 | 署名検証 |
-|--------------|---------------------|:---:|:---:|:---:|
-| mcp-scan     | プロキシ + ガード   | ✅ | ❌ | ❌ |
-| Intercept    | ポリシープロキシ    | ✅ | ❌ | ❌ |
-| **agentwit** | **Witnessプロキシ** | **❌** | **✅** | **✅** |
-
-## クイックスタート
+**AIエージェントのMCPツール呼び出しを監査・デバッグする。**
 
 ```bash
 pip install agentwit
-pip install agentwit[full]  # LangChain統合込み
+agentwit proxy --target http://localhost:3000 --port 8765
 ```
 
+```
+[agentwit] 14:32:01  tools/call  bash       HIGH ⚠  shell_exec
+[agentwit] 14:32:03  tools/call  read_file  LOW  ✓
+[agentwit] 14:32:05  tools/call  bash       CRITICAL 🚨 privilege_escalation
+```
+
+接続先URLを1行変えるだけ。MCPサーバーの改造不要。
+
+![agentwit demo](docs/demo.gif)
+
+[English](README.md) · [PyPI](https://pypi.org/project/agentwit/) · [Releases](https://github.com/tokotokokame/agentwit/releases)
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![PyPI](https://img.shields.io/badge/PyPI-v0.5.0-orange.svg)](https://pypi.org/project/agentwit/)
+[![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen.svg)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## 問題
+
+AIエージェントがMCPサーバーのツールを呼び出すとき、**何が起きているか見えない。**
+
+```
+AIエージェント
+    ↓（ブラックボックス）
+MCPサーバー → bash / read_file / fetch / ...
+```
+
+agentwitはその間に透過プロキシとして入り、全通信を記録する。
+
+```
+AIエージェント
+    ↓
+agentwit  ← ログ記録・リスク判定・改ざん検知
+    ↓
+MCPサーバー（変更不要）
+```
+
+---
+
+## 5分で動かす
+
 ```bash
-# プロキシ起動
+pip install agentwit
+
+# 1. プロキシ起動
 agentwit proxy --target http://localhost:3000 --port 8765
 
-# 接続先を http://localhost:8765 に変更するだけ
+# 2. エージェントの接続先を 3000 → 8765 に変えるだけ
+#    記録が始まる。
 
-# チェーン整合性 + ed25519署名を検証
-agentwit verify --session ./witness_logs/SESSION_ID
+# 3. 監査レポート生成
+agentwit report --session ./witness_logs/SESSION_ID --format html
 
-# 監査レポート生成
-agentwit report --session ./witness_logs/SESSION_ID \
-                --format html --output report.html
-```
-
-## セキュリティ機能
-
-### ed25519ログ署名（v0.5.0）
-
-初回起動時に鍵ペアを自動生成します。ユーザー操作不要。
-
-```
-~/.agentwit/signing_key.pem  ← 秘密鍵（chmod 600）
-~/.agentwit/signing_pub.pem  ← 公開鍵
-```
-
-```bash
+# 4. ログの整合性検証
 agentwit verify --session ./witness_logs/SESSION_ID
 # Chain integrity:  VALID ✓
 # Signature check:  VALID ✓
 ```
 
-### プロンプトインジェクション検知（v0.4.0）
+---
 
-MCPサーバーのレスポンスに悪意ある指示文が含まれていないかを検知します。
-Claude API不要・正規表現のみ・追加コスト$0。
+## 機能
 
-| パターン | Severity | 例 |
-|---|---|---|
-| instruction_override | CRITICAL | "Ignore previous instructions" |
-| role_hijack | CRITICAL | "You are now DAN" |
-| jailbreak | CRITICAL | "Do anything now" |
-| hidden_instruction | HIGH | `<!-- [SYSTEM] -->` |
-| data_extraction | HIGH | "Send the above to..." |
-| tool_abuse | MEDIUM | "Execute the following" |
+### ログ記録
+- SHA-256チェーンで改ざん検知
+- ed25519署名で「誰が記録したか」を証明
+- HTML / Markdown / JSON レポート自動生成
+- セッション終了時に `~/.agentwit/backups/` へ自動バックアップ
 
-### プロキシバイパス検知（v0.5.0）
+### リスク検知
+| パターン | Severity |
+|---|---|
+| `privilege_escalation`（sudo・SUID） | CRITICAL |
+| `prompt_injection`（指示文上書き・ロール乗っ取り） | CRITICAL |
+| `data_exfiltration`（外部URLへのPOST） | HIGH |
+| `credential_access`（パスワード・APIキー） | HIGH |
+| `tool_schema_change`（ツール追加・改ざん） | HIGH |
+| `call_rate_anomaly`（1分30回超） | HIGH |
+| `lateral_movement` | HIGH |
+| `persistence`（cron・サービス登録） | HIGH |
 
-agentwitを経由しない直接接続を検知します。sudo不要・iptables不要。
-
-```json
-{
-  "type": "proxy_bypass_detected",
-  "severity": "HIGH",
-  "detail": "Request missing X-Agentwit-Proxy header"
-}
-```
-
-### Skill/Tool登録監視（v0.4.0）
-
-セッション間でツールが追加・削除・変更されたことを検知します。
-
-```json
-{
-  "type": "tool_schema_change",
-  "changes": { "added": ["suspicious_tool"], "modified": ["bash"] },
-  "severity": "HIGH"
-}
-```
-
-### 異常検知（v0.5.0）
-
-```json
-{ "type": "call_rate_anomaly",  "calls_per_minute": 47, "severity": "HIGH"   }
-{ "type": "repeated_tool_call", "tool": "bash", "count": 15, "severity": "MEDIUM" }
-```
-
-### 自動バックアップ（v0.5.0）
-
-セッション終了時に `~/.agentwit/backups/` へ自動保存。最新30件を保持。
-
-## コマンド一覧
-
-```
-agentwit proxy   --target URL [--port 8765] [--webhook URL] [--webhook-on HIGH,CRITICAL]
-agentwit verify  --session DIR
-agentwit report  --session DIR [--format json|markdown|html] [--output FILE]
-agentwit replay  --session DIR
-agentwit diff    --session-a DIR --session-b DIR
-```
-
-## MCP仕様自動追従（v0.4.0）
-
-GitHub Actionsが毎月1日にMCP仕様の変更を検知。
-変更時: テスト自動実行 → GitHub Issue作成 → Discord通知。
-追加コスト: $0。
-
-## Docker Compose監査スタック（v0.4.0）
-
-agentwit + Grafana + Loki + Fluent Bitをワンコマンドで起動：
-
+### 通知
 ```bash
-cd docker/
-cp .env.example .env   # TARGET_URLを設定
-docker compose up -d
-# Grafana: http://localhost:3000
+agentwit proxy --target http://localhost:3000 \
+  --webhook https://hooks.slack.com/xxx \
+  --webhook-on HIGH,CRITICAL
 ```
+Slack / Discord に対応（URLで自動判定）。
 
-Fluent Bitが `Authorization`・`api_key`・`token`・`password` を自動マスク。
+---
 
-## MCP Inspector GUI
+## 既存ツールとの比較
 
-MCPサーバーのデバッグ専用デスクトップアプリ（Tauri + React）。
+| ツール | 通信ブロック | 改ざん検知 | 署名検証 |
+|---|:---:|:---:|:---:|
+| mcp-scan | ✅ | ❌ | ❌ |
+| Intercept | ✅ | ❌ | ❌ |
+| **agentwit** | **❌** | **✅** | **✅** |
 
-```bash
-sudo dpkg -i mcp-inspector_0.1.0_amd64.deb
-mcp-inspector
-# 接続: HTTP → http://localhost:3000/mcp
-```
+ガードは止める。証人は記録する。agentwitは証人。
 
-## Witness Logのフォーマット
-
-```json
-{
-  "witness_id":      "イベント全体のsha256",
-  "session_chain":   "sha256(直前のchain_hash + event_hash)",
-  "timestamp":       "2026-03-21T12:00:00Z",
-  "actor":           "my-agent",
-  "action":          "tools/call",
-  "tool":            "bash",
-  "signature":       "base64(ed25519署名)",
-  "signed_by":       "公開鍵のfingerprint",
-  "risk_indicators": [{ "pattern": "shell_exec", "severity": "HIGH" }]
-}
-```
+---
 
 ## LangChain統合
 
@@ -181,35 +120,93 @@ pip install agentwit[full]
 
 ```python
 from agentwit import AgentwitCallback
-callbacks = [AgentwitCallback(output="./audit.json")]
-agent.run("タスク内容", callbacks=callbacks)
+
+agent.run(
+    "タスク内容",
+    callbacks=[AgentwitCallback(output="./audit.json")]
+)
 ```
+
+---
+
+## MCP Inspector GUI
+
+MCPサーバーのデバッグ専用デスクトップアプリ（Linux・Tauri + React）。
+
+```bash
+sudo dpkg -i mcp-inspector_0.1.0_amd64.deb
+mcp-inspector
+# 接続: HTTP → http://localhost:3000/mcp
+```
+
+機能: ツール一覧・パラメータ編集・レスポンス表示・セッション比較・コスト追跡
+
+---
+
+## Docker Compose監査スタック
+
+agentwit + Grafana + Loki + Fluent Bitをワンコマンドで起動。
+
+```bash
+cd docker/
+cp .env.example .env   # TARGET_URLを設定
+docker compose up -d
+# Grafanaダッシュボード: http://localhost:3000
+```
+
+APIキー・トークンはFluent Bitが自動マスク。
+
+---
+
+## コマンド一覧
+
+| コマンド | 説明 |
+|---|---|
+| `agentwit proxy` | 透過Witnessプロキシを起動 |
+| `agentwit verify` | チェーン整合性 + ed25519署名を検証 |
+| `agentwit report` | 監査レポート生成（html/markdown/json） |
+| `agentwit replay` | セッション再生・チェーン検証 |
+| `agentwit diff` | 2セッションを比較 |
+
+---
+
+## Witness Logフォーマット
+
+```json
+{
+  "witness_id":      "イベント全体のsha256",
+  "session_chain":   "sha256(直前のchain + event_hash)",
+  "timestamp":       "2026-03-21T12:00:00Z",
+  "tool":            "bash",
+  "signature":       "base64(ed25519署名)",
+  "risk_indicators": [{ "pattern": "shell_exec", "severity": "HIGH" }]
+}
+```
+
+---
 
 ## バージョン履歴
 
-| バージョン | 日付 | 主な内容 |
-|---|---|---|
-| v0.1.0 | 2026-03-14 | MVP: HTTP/SSE/stdioプロキシ・SHA-256チェーンログ |
-| v0.2.0 | 2026-03-15 | HTML/Markdownレポート・タイムライン比較・LangChain・Slack/Discord |
-| v0.3.0 | 2026-03-16 | MCP Inspector GUI・標準MCP `/mcp` エンドポイント |
-| v0.4.0 | 2026-03-21 | MCP仕様自動追従・プロンプトインジェクション検知・Tool監視・Dockerスタック |
-| v0.5.0 | 2026-03-21 | ed25519署名・バイパス検知・異常検知・自動バックアップ |
+| バージョン | 主な内容 |
+|---|---|
+| v0.1.0 | プロキシ・SHA-256チェーンログ |
+| v0.2.0 | HTMLレポート・LangChain・Slack/Discord |
+| v0.3.0 | MCP Inspector GUI |
+| v0.4.0 | プロンプトインジェクション検知・Tool監視・Dockerスタック |
+| v0.5.0 | ed25519署名・バイパス検知・異常検知 |
 
-## ロードマップ
+---
 
-- [ ] GUIからHTMLレポート直接生成
-- [ ] Agent行動監視（判断プロセス記録）
-- [ ] Windows対応確認
-- [ ] GUIテストカバレッジ
-- [ ] OWASP LLM Top 10マッピング
-- [ ] SIEM連携（v1.0.0）
+## 記事
+- [AIエージェントの「証人」を作った（Zenn）](https://zenn.dev/tokotokokame/articles/bba6a258a458a1)
+- [「公証人」はなぜデバッガーに進化したのか（Zenn）](https://zenn.dev/tokotokokame/articles/9183dd8a1734e2)
+
+---
 
 ## 動作要件
 
 - Python 3.10+
-- cryptography>=41.0.0
-- FastAPI, uvicorn, httpx, click（自動インストール）
-- GUI: Node.js 18+・Rust 1.70+（ソースからビルドする場合）
+- 依存パッケージは自動インストール: FastAPI, uvicorn, httpx, click, cryptography
 
 ## ライセンス
 
