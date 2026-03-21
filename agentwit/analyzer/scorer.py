@@ -24,6 +24,60 @@ RISK_PATTERNS: list[tuple[str, str, str]] = [
     ("privilege_escalation", r"\bsudo\b|setuid|suid|chmod\s+[0-9]*[4-7][0-9]{2}|chown\s+root|visudo|/etc/sudoers|pkexec", "critical"),
 ]
 
+# Prompt-injection specific patterns — used by score_for_injection()
+PROMPT_INJECTION_PATTERNS: list[tuple[str, str, str]] = [
+    (
+        "instruction_override",
+        r"ignore\s+(?:all\s+)?(?:previous\s+|above\s+|prior\s+)?(?:instructions?|prompts?|context|rules?)|"
+        r"disregard\s+(?:all\s+)?(?:previous\s+|above\s+|prior\s+)?(?:instructions?|prompts?|context|rules?)|"
+        r"forget\s+(?:everything|all|what\s+you\s+were\s+told)|"
+        r"new\s+(?:instructions?|directives?|rules?|system\s+prompt)",
+        "critical",
+    ),
+    (
+        "role_hijack",
+        r"you\s+are\s+(?:now\s+)?(?:a\s+|an\s+)?(?:different\s+|new\s+)?(?:ai|assistant|bot|model|gpt|llm)\b|"
+        r"act\s+as\s+(?:a\s+|an\s+|the\s+)?(?:different\s+|new\s+)?(?:ai|assistant|bot|jailbroken|unrestricted)|"
+        r"pretend\s+(?:you\s+are|to\s+be)|"
+        r"your\s+(?:true\s+|real\s+|actual\s+)?(?:identity|purpose|role|goal)\s+is",
+        "critical",
+    ),
+    (
+        "jailbreak",
+        r"\bdan\b.*?mode|do\s+anything\s+now|jailbr(?:eak(?:ed)?|oken)\b|"
+        r"developer\s+mode|unrestricted\s+mode|no\s+(?:restrictions?|limits?|filters?|guidelines?)|"
+        r"bypass\s+(?:safety|filter|restriction|alignment|guardrail)|"
+        r"without\s+(?:ethical|moral|safety)\s+(?:constraints?|restrictions?|guidelines?)",
+        "critical",
+    ),
+    (
+        "hidden_instruction",
+        r"<!--.*?-->|"
+        r"\[INST\]|\[\/INST\]|<\|im_start\|>|<\|im_end\|>|"
+        r"<system>|<\/system>|"
+        r"(?:\x00|\x01|\x02|\x03|\x04|\x05|\x06|\x07|\x08|\x0b|\x0c|\x0e|\x0f)"
+        r"|\u200b|\u200c|\u200d|\ufeff",
+        "high",
+    ),
+    (
+        "data_extraction",
+        r"(?:print|output|repeat|show|reveal|display|return|send)\s+(?:me\s+)?(?:all\s+|every\s+|your\s+|the\s+)?"
+        r"(?:system\s+prompt|instructions?|context|config|secrets?|passwords?|tokens?|api.?keys?|"
+        r"training\s+data|conversation\s+history|private|internal|confidential)|"
+        r"(?:tell|give)\s+me\s+(?:all\s+|your\s+|the\s+)?"
+        r"(?:system\s+prompt|instructions?|secrets?|passwords?|tokens?|api.?keys?)",
+        "high",
+    ),
+    (
+        "tool_abuse",
+        r"call\s+(?:the\s+|a\s+|any\s+)?tool|invoke\s+(?:the\s+|a\s+|any\s+)?tool|"
+        r"use\s+(?:the\s+|a\s+|any\s+)?tool\s+(?:to\s+)?(?:delete|remove|drop|destroy|exfil|steal|bypass)|"
+        r"execute\s+(?:without|bypassing)\s+(?:permission|authorization|approval|confirmation)|"
+        r"run\s+(?:this\s+|the\s+)?(?:command|script|code)\s+(?:silently|without|bypassing)",
+        "medium",
+    ),
+]
+
 # Severity ordering for comparisons
 _SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
@@ -167,3 +221,41 @@ class RiskScorer:
             "consecutive_high_risk": consecutive_runs,
             "pattern_frequency": pattern_frequency,
         }
+
+    def score_for_injection(self, text: str) -> list[dict]:
+        """Scan *text* for prompt-injection patterns.
+
+        Unlike :meth:`score_event`, this method operates on a raw string and
+        uses the dedicated :data:`PROMPT_INJECTION_PATTERNS` list rather than
+        the general risk patterns.
+
+        Args:
+            text: Arbitrary text to scan (e.g. a user message or tool output).
+
+        Returns:
+            A (possibly empty) list of dicts, each with keys:
+
+            - ``pattern``: The injection pattern name that matched.
+            - ``severity``: ``"medium"``, ``"high"``, or ``"critical"``.
+            - ``matched``: The specific substring that triggered the match.
+        """
+        compiled = [
+            (name, re.compile(regex, re.IGNORECASE | re.DOTALL), severity)
+            for name, regex, severity in PROMPT_INJECTION_PATTERNS
+        ]
+
+        indicators: list[dict] = []
+        seen: set[str] = set()
+        for name, regex, severity in compiled:
+            if name in seen:
+                continue
+            m = regex.search(text)
+            if m:
+                indicators.append({
+                    "pattern": name,
+                    "severity": severity,
+                    "matched": m.group(0),
+                })
+                seen.add(name)
+
+        return indicators
