@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentwit"
-version = "0.3.0"
+version = "0.4.0"
 description = "Transparent proxy witness for AI agent ↔ MCP server communications"
 readme = "README.md"
 requires-python = ">=3.10"
