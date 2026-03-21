@@ -1,4 +1,4 @@
-# agentwit
+# agentwit — AI Agent Traffic Inspector
 
 > Transparent witness for AI agent ↔ MCP server communications
 
