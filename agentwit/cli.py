@@ -411,3 +411,11 @@ def diff(session_a: str, session_b: str) -> None:
         click.echo(click.style("  Risk profiles differ between sessions.", fg="yellow"))
     else:
         click.echo(click.style("  Risk profiles are identical.", fg="green"))
+
+@cli.command("gui")
+@click.argument("extra_args", nargs=-1, type=click.UNPROCESSED)
+def gui_command(extra_args):
+    """MCP Inspector GUI を起動する。"""
+    import sys
+    from agentwit.gui_launcher import main as _gui_main
+    sys.exit(_gui_main(list(extra_args)))

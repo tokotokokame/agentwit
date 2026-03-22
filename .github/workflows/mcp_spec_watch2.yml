@@ -1,0 +1,52 @@
+name: MCP Spec Watch
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "debug"
+        required: false
+        default: "false"
+
+jobs:
+  check-spec:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install pytest pytest-asyncio httpx
+      - name: Install agentwit
+        run: pip install -e ".[dev]"
+      - name: Get latest MCP spec tag
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(curl -s -H "Authorization: token ${GH_TOKEN}" https://api.github.com/repos/modelcontextprotocol/specification/tags | jq -r 'if type == "array" then .[0].name else "unknown" end')
+          echo "tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
+      - name: Read previous tag
+        id: previous
+        run: |
+          PREV_TAG=$(jq -r '.tag' .github/mcp_spec_version.json)
+          echo "tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
+      - name: Check for changes
+        id: changed
+        run: |
+          if [ "${{ steps.latest.outputs.tag }}" != "${{ steps.previous.outputs.tag }}" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi

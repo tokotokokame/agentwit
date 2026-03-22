@@ -1,42 +1,278 @@
+# ============================================================
+# agentwit — GUI (MCP Inspector) Release Build
+# ============================================================
+# トリガー:
+#   - git push tag  v*.*.*   →  GitHub Release を自動作成してアップロード
+#   - workflow_dispatch       →  手動実行（テストビルド）
+#
+# 生成物:
+#   Linux   : mcp-inspector_amd64.deb / .rpm / .AppImage
+#   macOS   : mcp-inspector_aarch64.dmg / mcp-inspector_x64.dmg
+#   Windows : mcp-inspector_x64-setup.msi
+# ============================================================
+
 name: Build GUI
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      upload_release:
+        description: "GitHub Release にアップロードする (true/false)"
+        required: false
+        default: "false"
+
+env:
+  TAURI_APP_DIR: gui   # リポジトリ内の Tauri プロジェクトディレクトリ
 
 jobs:
+  # ============================================================
+  # Linux — deb / rpm / AppImage
+  # ============================================================
   build-linux:
-    runs-on: ubuntu-latest
+    name: Build (Linux)
+    runs-on: ubuntu-22.04
+
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install dependencies
+
+      # --- Node.js ------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ${{ env.TAURI_APP_DIR }}/package-lock.json
+
+      # --- Rust ---------------------------------------------------
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "${{ env.TAURI_APP_DIR }}/src-tauri -> target"
+
+      # --- System deps (Tauri 2.x 必須) ---------------------------
+      - name: Install Linux system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libappindicator3-dev librsvg2-dev patchelf
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: cd gui && npm install && npx tauri build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-deb
-          path: gui/src-tauri/target/release/bundle/deb/*.deb
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            pkg-config
 
-  build-windows:
-    runs-on: windows-latest
+      # --- npm install + Tauri build ------------------------------
+      - name: Install npm dependencies
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: npm ci
+
+      - name: Build Tauri app (Linux)
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: npx tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # --- リネーム（バージョン非依存の固定ファイル名に）----------
+      - name: Rename Linux artifacts
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: |
+          BUNDLE_DIR=src-tauri/target/release/bundle
+          # .deb
+          DEB=$(find $BUNDLE_DIR/deb -name "*.deb" | head -1)
+          [ -n "$DEB" ] && cp "$DEB" mcp-inspector_amd64.deb
+          # .rpm
+          RPM=$(find $BUNDLE_DIR/rpm -name "*.rpm" | head -1)
+          [ -n "$RPM" ] && cp "$RPM" mcp-inspector_amd64.rpm
+          # .AppImage
+          APPIMAGE=$(find $BUNDLE_DIR/appimage -name "*.AppImage" | head -1)
+          [ -n "$APPIMAGE" ] && cp "$APPIMAGE" mcp-inspector_amd64.AppImage
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            ${{ env.TAURI_APP_DIR }}/mcp-inspector_amd64.deb
+            ${{ env.TAURI_APP_DIR }}/mcp-inspector_amd64.rpm
+            ${{ env.TAURI_APP_DIR }}/mcp-inspector_amd64.AppImage
+          if-no-files-found: warn
+
+  # ============================================================
+  # macOS — dmg (Apple Silicon + Intel)
+  # ============================================================
+  build-macos:
+    name: Build (macOS ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64   # Apple Silicon (M1/M2/M3)
+            runner: macos-14
+            rust_target: aarch64-apple-darwin
+            artifact_suffix: aarch64
+          - arch: x64       # Intel Mac
+            runner: macos-latest
+            rust_target: x86_64-apple-darwin
+            artifact_suffix: x64
+
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - run: cd gui && npm install && npx tauri build
-        shell: bash
-      - uses: actions/upload-artifact@v4
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ${{ env.TAURI_APP_DIR }}/package-lock.json
+
+      - name: Setup Rust (${{ matrix.rust_target }})
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "${{ env.TAURI_APP_DIR }}/src-tauri -> target"
+
+      - name: Install npm dependencies
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: npm ci
+
+      - name: Build Tauri app (macOS ${{ matrix.arch }})
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: npx tauri build --target ${{ matrix.rust_target }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: "-"
+
+      - name: Rename macOS artifact
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: |
+          DMG=$(find src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg \
+                -name "*.dmg" | head -1)
+          [ -n "$DMG" ] && cp "$DMG" mcp-inspector_${{ matrix.artifact_suffix }}.dmg
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: ${{ env.TAURI_APP_DIR }}/mcp-inspector_${{ matrix.artifact_suffix }}.dmg
+          if-no-files-found: warn
+
+  # ============================================================
+  # Windows — msi
+  # ============================================================
+  build-windows:
+    name: Build (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ${{ env.TAURI_APP_DIR }}/package-lock.json
+
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "${{ env.TAURI_APP_DIR }}/src-tauri -> target"
+
+      - name: Install npm dependencies
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: npm ci
+
+      - name: Build Tauri app (Windows)
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        run: npx tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Rename Windows artifact
+        working-directory: ${{ env.TAURI_APP_DIR }}
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path src-tauri/target/release/bundle/msi `
+                               -Filter "*.msi" -Recurse | Select-Object -First 1
+          if ($msi) { Copy-Item $msi.FullName mcp-inspector_x64-setup.msi }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
         with:
           name: windows-msi
-          path: gui/src-tauri/target/release/bundle/msi/*.msi
+          path: ${{ env.TAURI_APP_DIR }}/mcp-inspector_x64-setup.msi
+          if-no-files-found: warn
+
+  # ============================================================
+  # GitHub Release — タグ push 時のみ全成果物をまとめてリリース
+  # ============================================================
+  release:
+    name: Create GitHub Release
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    # タグ push または手動で upload_release=true の場合のみ実行
+    if: >
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.event.inputs.upload_release == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 全ジョブの成果物を一括ダウンロード
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: List downloaded files
+        run: find dist/ -type f
+
+      # CHANGELOG から該当バージョンの変更履歴を抽出（なければスキップ）
+      - name: Extract release notes
+        id: relnotes
+        run: |
+          TAG="${GITHUB_REF_NAME:-manual}"
+          NOTES=$(awk "/^## \[?${TAG#v}\]?/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md 2>/dev/null | head -40)
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${TAG}"
+          fi
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "MCP Inspector ${{ github.ref_name }}"
+          body: ${{ steps.relnotes.outputs.notes }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/linux-packages/mcp-inspector_amd64.deb
+            dist/linux-packages/mcp-inspector_amd64.rpm
+            dist/linux-packages/mcp-inspector_amd64.AppImage
+            dist/macos-aarch64/mcp-inspector_aarch64.dmg
+            dist/macos-x64/mcp-inspector_x64.dmg
+            dist/windows-msi/mcp-inspector_x64-setup.msi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
