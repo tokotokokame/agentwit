@@ -10,7 +10,7 @@ agentwit proxy --target http://localhost:3000 --port 8765
 ```
 [agentwit] 14:32:01  tools/call  bash       HIGH ⚠  shell_exec
 [agentwit] 14:32:03  tools/call  read_file  LOW  ✓
-[agentwit] 14:32:05  tools/call  bash       CRITICAL 🚨 privilege_escalation
+[agentwit] 14:32:05  tools/call  bash       CRITICAL 🚨 privilege_escalation  LLM06
 ```
 
 Change one URL. No MCP server modification needed.
@@ -21,9 +21,10 @@ Change one URL. No MCP server modification needed.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyPI](https://img.shields.io/badge/PyPI-v1.0.0-orange.svg)](https://pypi.org/project/agentwit/)
-[![Tests](https://img.shields.io/badge/tests-291%20passing-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![OWASP LLM Top 10](https://img.shields.io/badge/OWASP%20LLM-Top%2010%20mapped-red.svg)](docs/api-reference.md#owaspmapper)
+[![Plugin API](https://img.shields.io/badge/plugin--api-stable-blueviolet.svg)](docs/plugin-guide.md)
 
 ---
 
@@ -33,7 +34,7 @@ When an AI agent calls MCP server tools, **you can't see what's happening.**
 
 ```
 AI Agent
-    ↓  (black box)
+↓  (black box)
 MCP Server  →  bash / read_file / fetch / ...
 ```
 
@@ -41,15 +42,15 @@ agentwit sits between them as a transparent proxy and records everything.
 
 ```
 AI Agent
-    ↓
+↓
 agentwit  ←  logs every call · detects risks · verifies integrity
-    ↓
+↓
 MCP Server  (zero modification)
 ```
 
 ---
 
-## 5-minute demo
+## 5-minute quickstart
 
 ```bash
 pip install agentwit
@@ -69,6 +70,8 @@ agentwit verify --session ./witness_logs/SESSION_ID
 # Signature check:  VALID ✓
 ```
 
+→ Full guide: [docs/quickstart.md](docs/quickstart.md)
+
 ---
 
 ## Features
@@ -80,38 +83,106 @@ agentwit verify --session ./witness_logs/SESSION_ID
 - Auto-backup to `~/.agentwit/backups/` on session end
 
 ### Risk detection
-| Pattern | Severity |
-|---|---|
-| `privilege_escalation` (sudo, SUID) | CRITICAL |
-| `prompt_injection` (ignore instructions, role hijack) | CRITICAL |
-| `data_exfiltration` (external URL POST) | HIGH |
-| `credential_access` (password, API key) | HIGH |
-| `tool_schema_change` (tool added/modified) | HIGH |
-| `call_rate_anomaly` (>30 calls/min) | HIGH |
-| `lateral_movement` | HIGH |
-| `persistence` (cron, service) | HIGH |
+- 15+ built-in patterns: `shell_exec`, `privilege_escalation`, `data_exfiltration`, `jailbreak`, ...
+- Prompt injection detection (CRITICAL/HIGH/MEDIUM/LOW)
+- Tool schema change detection
+- Agent thought & reasoning recording (LangChain)
 
-### Notifications
-```bash
-agentwit proxy --target http://localhost:3000 \
-  --webhook https://hooks.slack.com/xxx \
-  --webhook-on HIGH,CRITICAL
+### OWASP LLM Top 10 mapping *(v1.0.0)*
+
+Every detected risk is automatically tagged with the corresponding OWASP LLM category:
+
+| OWASP LLM | Category | Detected patterns |
+|---|---|---|
+| LLM01 | Prompt Injection | `instruction_override` / `role_hijack` / `jailbreak` |
+| LLM02 | Sensitive Info Disclosure | `credential_access` / `data_exfiltration` |
+| LLM06 | Excessive Agency | `privilege_escalation` / `persistence` / `lateral_movement` |
+| LLM08 | Integrity Failures | `tool_schema_change` / `proxy_bypass_detected` |
+| LLM10 | Unbounded Consumption | `call_rate_anomaly` / `session_cost_exceeded` |
+
+```python
+from agentwit.analyzer.owasp_mapper import OWASPMapper
+mapper = OWASPMapper()
+mapper.map("privilege_escalation")  # → "LLM06"
+mapper.map_events(events)           # → adds owasp_category to each event
 ```
-Slack and Discord supported (auto-detected from URL).
+
+### Plugin API *(v1.0.0)*
+
+Add custom detection rules as external packages — no fork needed:
+
+```python
+# my_package/plugin.py
+from agentwit.plugins.base import PluginBase
+
+class MyPlugin(PluginBase):
+    def scan(self, event: dict) -> list[dict]:
+        if "dangerous_pattern" in str(event):
+            return [{"pattern": "my_pattern", "severity": "HIGH",
+                     "description": "Custom detection"}]
+        return []
+```
+
+```toml
+# pyproject.toml of your plugin package
+[project.entry-points."agentwit.plugins"]
+my_plugin = "my_package:MyPlugin"
+```
+
+```bash
+pip install agentwit-plugin-myname
+agentwit proxy --target http://localhost:3000 --port 8765
+# → plugin auto-loaded on startup
+```
+
+→ Full guide: [docs/plugin-guide.md](docs/plugin-guide.md)
+
+### SIEM integration *(v1.0.0)*
+
+Forward audit logs to Splunk, Elasticsearch, or Grafana Loki via Fluent Bit:
+
+```bash
+# docker/docker-compose.siem.yml
+SPLUNK_HEC_TOKEN=your-token docker compose -f docker/docker-compose.siem.yml up
+```
+
+Supports: Splunk HEC · Elasticsearch · Grafana Loki
+
+### MCP Inspector GUI
+
+Desktop app for real-time MCP server debugging.
+
+**Download:** [GitHub Releases](https://github.com/tokotokokame/agentwit/releases)
+- Linux: `.deb` / `.rpm` / `.AppImage`
+- Windows: `.msi` (via GitHub Actions)
+
+#### GUI features
+- 3-pane layout: Server info + Tool list / Parameter editor + Response / History + Metrics + Compare
+- **Export Report button** — generate HTML audit report from History tab with one click
+- EN/JP language support
+- Real-time risk score display
+
+```
+┌─────────────────┬──────────────────────┬─────────────────────┐
+│  Server Info    │  Parameter Editor    │  History            │
+│  ─────────────  │  ──────────────────  │  ─────────────────  │
+│  Tools          │  {                   │  [Export Report]    │
+│  ✓ bash   EXEC  │    "command": "ls"   │                     │
+│  ✓ read   READ  │  }                   │  14:32 bash  HIGH   │
+│  ✓ fetch  READ  │                      │  14:33 read  LOW    │
+│                 │  [Execute]           │  14:34 bash  CRIT   │
+└─────────────────┴──────────────────────┴─────────────────────┘
+```
 
 ---
 
-## Comparison
+## Transports
 
-| Tool | Blocks traffic | Tamper-proof log | Signed log |
-|---|:---:|:---:|:---:|
-| mcp-scan | ✅ | ❌ | ❌ |
-| Proximity | — | ❌ | ❌ |
-| Intercept | ✅ | ❌ | ❌ |
-| **agentwit** | **❌** | **✅** | **✅** |
-
-Guards stop things. Witnesses record them.
-agentwit is a witness — it never blocks, never interferes.
+| Transport | Status | How to use |
+|---|---|---|
+| Streamable HTTP | ✅ | `agentwit proxy --target http://localhost:3000` |
+| SSE (legacy) | ✅ | auto-detected |
+| stdio | ✅ | `agentwit proxy --stdio -- python mcp_server.py` |
 
 ---
 
@@ -122,190 +193,68 @@ pip install agentwit[full]
 ```
 
 ```python
-from agentwit import WitnessLogger
-from agentwit.integrations.langchain import AgentwitCallback
+from agentwit import AgentwitCallback
 
-logger = WitnessLogger(session_dir="./witness_logs", actor="langchain-agent")
-cb = AgentwitCallback(witness_logger=logger)
+callbacks = [AgentwitCallback(output="./audit.jsonl")]
 
-chain.invoke({"input": "your task"}, config={"callbacks": [cb]})
-logger.close()
+# Agent thoughts and reasoning are also recorded:
+# {"type": "agent_thought", "thought": "...", "tool_selected": "bash",
+#  "reasoning": "...", "timestamp": "..."}
 ```
-
-Records agent thoughts (ReAct `Thought:` extraction), tool calls, LLM prompts
-and responses. All events written to `audit.jsonl` with 100-char privacy
-truncation on LLM content.
 
 ---
 
-## OWASP LLM Top 10 mapping
-
-Every detected risk pattern is automatically mapped to the
-[OWASP LLM Top 10 (2025)](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
-categories:
-
-| Pattern | OWASP ID | Category |
-|---|---|---|
-| `instruction_override`, `role_hijack`, `jailbreak` | LLM01 | Prompt Injection |
-| `credential_access`, `data_exfiltration` | LLM02 | Sensitive Information Disclosure |
-| `privilege_escalation`, `persistence`, `lateral_movement` | LLM06 | Excessive Agency |
-| `tool_schema_change`, `proxy_bypass_detected` | LLM08 | Vector and Embedding Weaknesses |
-| `call_rate_anomaly`, `session_cost_exceeded` | LLM10 | Unbounded Consumption |
-
-HTML reports include a per-category summary card and an OWASP column in the
-event timeline.
-
----
-
-## Plugin ecosystem
-
-Extend agentwit with custom detection rules — no fork required.
-
-```python
-# agentwit_myplugin/__init__.py
-from agentwit.plugins.base import PluginBase
-
-class MyPlugin(PluginBase):
-    @property
-    def name(self) -> str:
-        return "my-plugin"
-
-    @property
-    def version(self) -> str:
-        return "1.0.0"
-
-    def scan(self, event: dict) -> list[dict]:
-        alerts = []
-        if "DROP TABLE" in str(event.get("full_payload", "")):
-            alerts.append({
-                "pattern": "sql_injection_attempt",
-                "severity": "critical",
-                "description": "Possible SQL injection in tool input",
-            })
-        return alerts
-```
-
-Register via `pyproject.toml` entry-points and install — the plugin is
-auto-discovered at proxy startup:
-
-```toml
-[project.entry-points."agentwit.plugins"]
-my_plugin = "agentwit_myplugin:MyPlugin"
-```
-
-See [docs/plugin-guide.md](docs/plugin-guide.md) for the complete guide.
-
----
-
-## MCP Inspector GUI
-
-Desktop debugger for MCP servers — three-pane interface with real-time
-tool call inspection.
+## CLI reference
 
 ```bash
-# Download the latest .deb from the Releases page, then:
-sudo dpkg -i mcp-inspector_*.deb
-mcp-inspector
+# Proxy
+agentwit proxy --target http://localhost:3000 --port 8765
+agentwit proxy --target http://localhost:3000 --port 8765 --timeout 60
+agentwit proxy --stdio -- python mcp_server.py
+agentwit proxy --target http://localhost:3000 \
+  --webhook https://hooks.slack.com/xxx \
+  --webhook-on HIGH,CRITICAL
+
+# Reports
+agentwit report --session ./witness_logs/SESSION_ID --format json
+agentwit report --session ./witness_logs/SESSION_ID --format markdown
+agentwit report --session ./witness_logs/SESSION_ID --format html --output ./report.html
+
+# Verification
+agentwit verify --session ./witness_logs/SESSION_ID
+agentwit replay --session ./witness_logs/SESSION_ID
+agentwit diff --session-a ./witness_logs/A --session-b ./witness_logs/B
 ```
 
-**Connection:** open the Connection panel → select HTTP or stdio → enter your
-MCP server URL or command → click Connect.
-
-**Export Report:** after tool calls appear in the History tab, click the amber
-**Export Report** button to save a self-contained HTML audit report.  The
-report opens in your browser automatically.
-
-Features: tool list · parameter editor · response viewer · session compare ·
-cost tracking · one-click HTML report export
+→ Full reference: [docs/api-reference.md](docs/api-reference.md)
 
 ---
 
-## Docker Compose audit stack
+## Guard vs. Witness
 
-One command: agentwit + Grafana + Loki + Fluent Bit.
+| Tool | Approach | Blocks calls | Tamper-proof log |
+|---|---|---|---|
+| mcp-scan | Proxy + Guard | ✅ | ❌ |
+| Intercept | Policy proxy | ✅ | ❌ |
+| **agentwit** | **Witness proxy** | **❌** | **✅** |
 
-```bash
-cd docker/
-cp .env.example .env   # set TARGET_URL
-docker compose up -d
-# Grafana dashboard: http://localhost:3000
-```
-
-API keys / tokens are automatically masked by Fluent Bit.
-
----
-
-## SIEM integration
-
-Forward `audit.jsonl` to Splunk, Elasticsearch, or Grafana Loki:
-
-```bash
-# Splunk
-export SPLUNK_HEC_TOKEN=your-token
-export SPLUNK_HOST=splunk.example.com
-docker compose -f docker/docker-compose.siem.yml up -d
-
-# Elasticsearch
-export ES_HOST=elasticsearch.example.com
-docker compose -f docker/docker-compose.siem.yml up -d
-
-# Grafana Loki (default)
-docker compose -f docker/docker-compose.siem.yml up -d
-```
-
-All SIEM outputs use Fluent Bit with automatic auth-header masking.
-See the [environment variables reference](docs/api-reference.md#environment-variables)
-for all available options.
-
----
-
-## Commands
-
-| Command | Description |
-|---|---|
-| `agentwit proxy` | Start transparent witness proxy |
-| `agentwit verify` | Verify chain integrity + ed25519 signatures |
-| `agentwit report` | Generate audit report (html/markdown/json) |
-| `agentwit replay` | Replay session and verify chain |
-| `agentwit diff` | Compare two sessions side by side |
-
----
-
-## Witness log format
-
-```json
-{
-  "witness_id":      "sha256 of entire event",
-  "session_chain":   "sha256(prev_chain + event_hash)",
-  "timestamp":       "2026-03-21T12:00:00Z",
-  "tool":            "bash",
-  "signature":       "base64(ed25519)",
-  "risk_indicators": [{ "pattern": "shell_exec", "severity": "HIGH" }]
-}
-```
+agentwit does not block. It **witnesses**.  
+A blocked call leaves no trace. A witnessed call leaves evidence.
 
 ---
 
 ## Version history
 
-| Version | Highlights |
-|---|---|
-| v0.1.0 | Proxy, SHA-256 chain log |
-| v0.2.0 | HTML reports, LangChain, Slack/Discord |
-| v0.3.0 | MCP Inspector GUI |
-| v0.4.0 | Prompt injection detection, tool monitoring, Docker stack |
-| v0.5.0 | ed25519 signing, bypass detection, anomaly detection |
-| v0.6.0 | Retry/backoff, stdio auto-restart, LangChain audit log, GUI Export Report |
-| v0.7.0 | OWASP LLM Top 10 mapping, enriched HTML reports |
-| v1.0.0 | Plugin system, SIEM stack, full documentation |
-
-Full history in [CHANGELOG.md](CHANGELOG.md).
-
----
-
-## Articles
-- [Why I built a "witness" for AI agents (Zenn)](https://zenn.dev/tokotokokame/articles/bba6a258a458a1)
-- [From Witness to Inspector (Zenn)](https://zenn.dev/tokotokokame/articles/9183dd8a1734e2)
+| Version | Date | Highlights |
+|---|---|---|
+| v0.1.0 | 2026-03-14 | MVP: HTTP/SSE/stdio proxy, SHA-256 chain log |
+| v0.2.0 | 2026-03-15 | HTML report, LangChain, Slack/Discord webhook |
+| v0.3.0 | 2026-03-16 | MCP Inspector GUI, standard `/mcp` endpoint |
+| v0.4.0 | 2026-03-21 | MCP spec auto-follow, injection detection, tool monitoring |
+| v0.5.0 | 2026-03-22 | ed25519 signatures, bypass detection, anomaly detection |
+| v0.6.0 | 2026-03-22 | GUI Export Report, agent thought recording, error handling |
+| v0.7.0 | 2026-03-22 | OWASP LLM Top 10 mapping, Windows build (GitHub Actions) |
+| **v1.0.0** | **2026-03-22** | **Plugin API, SIEM integration, full docs, GUI tests** |
 
 ---
 
@@ -313,19 +262,15 @@ Full history in [CHANGELOG.md](CHANGELOG.md).
 
 | Doc | Contents |
 |---|---|
-| [docs/quickstart.md](docs/quickstart.md) | Installation, proxy modes, report generation, GUI, Docker |
-| [docs/architecture.md](docs/architecture.md) | Design philosophy, component overview, data flow |
-| [docs/api-reference.md](docs/api-reference.md) | CLI reference, Python API, log formats, env vars |
-| [docs/plugin-guide.md](docs/plugin-guide.md) | Writing, testing, and publishing custom plugins |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, test execution, PR process, conventions |
+| [docs/quickstart.md](docs/quickstart.md) | 5-minute getting started guide |
+| [docs/architecture.md](docs/architecture.md) | Architecture and design philosophy |
+| [docs/api-reference.md](docs/api-reference.md) | Full CLI and Python API reference |
+| [docs/plugin-guide.md](docs/plugin-guide.md) | Plugin development guide |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
+| [CHANGELOG.md](CHANGELOG.md) | Full version history |
 
 ---
 
-## Requirements
-
-- Python 3.10+
-- Dependencies auto-installed: FastAPI, uvicorn, httpx, click, cryptography
-
 ## License
 
-[MIT](LICENSE) © agentwit contributors
+MIT — see [LICENSE](LICENSE)
