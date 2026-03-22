@@ -12,6 +12,7 @@ from pathlib import Path
 
 import agentwit
 from agentwit.witness.chain import ChainManager
+from agentwit.analyzer.owasp_mapper import OWASPMapper, OWASP_DESCRIPTIONS
 
 _CSS = """
 :root {
@@ -120,6 +121,32 @@ tbody td { padding: 8px 12px; vertical-align: top; }
 .sev-medium   { background: #3d3300; color: #e3b341; }
 .sev-low      { background: #1a2e1a; color: #7ee787; }
 .witness-id { font-family: monospace; font-size: 0.7rem; color: var(--muted); }
+.owasp-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin: 1px 2px;
+  background: #1a2640;
+  color: #58a6ff;
+  border: 1px solid #264a80;
+  font-family: monospace;
+}
+.owasp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.owasp-cell {
+  background: var(--surface);
+  border: 1px solid #264a80;
+  border-radius: 6px;
+  padding: 12px;
+}
+.owasp-cell .owasp-id   { font-family: monospace; font-size: 1.1rem; font-weight: 700; color: #58a6ff; }
+.owasp-cell .owasp-name { font-size: 0.78rem; color: var(--muted); margin: 2px 0 6px; }
+.owasp-cell .owasp-count { font-size: 1.6rem; font-weight: 700; color: var(--text); }
 footer {
   margin-top: 32px;
   padding-top: 12px;
@@ -165,7 +192,7 @@ class HtmlReporter:
             chain_valid = True
 
         # Risk counts (per event, by worst severity in that event)
-        from agentwit.analyzer.scorer import RiskScorer, _SEVERITY_ORDER
+        from agentwit.analyzer.scorer import RiskScorer
 
         scorer = RiskScorer()
         risk_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
@@ -178,14 +205,20 @@ class HtmlReporter:
             if worst in risk_counts:
                 risk_counts[worst] += 1
 
+        # OWASP enrichment
+        mapper = OWASPMapper()
+        enriched_events = mapper.map_events(events)
+        owasp_counts = mapper.summary(enriched_events)
+
         # Build HTML sections
         badge_cls = "badge-valid" if chain_valid else "badge-tampered"
         badge_text = "VALID" if chain_valid else "TAMPERED"
 
         meta_html = _meta_grid(session_id, generated_at, actor, total_events)
         risk_html = _risk_summary(risk_counts)
-        timeline_html = _event_timeline(events, event_risk_levels)
+        timeline_html = _event_timeline(enriched_events, event_risk_levels)
         chain_html = _chain_section(chain_valid)
+        owasp_html = _owasp_summary(owasp_counts)
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -216,6 +249,11 @@ class HtmlReporter:
   <div class="card">
     <h2>Event Timeline</h2>
     {timeline_html}
+  </div>
+
+  <div class="card">
+    <h2>OWASP LLM Top 10 Summary</h2>
+    {owasp_html}
   </div>
 
   <div class="card">
@@ -289,12 +327,18 @@ def _event_timeline(events: list[dict], risk_levels: list[str]) -> str:
         wid = html.escape((event.get("witness_id", "") or "")[:16])
         indicators = event.get("risk_indicators") or []
         badges = ""
+        owasp_badges = ""
         for ri in indicators:
             sev = ri.get("severity", "low")
             pat = html.escape(ri.get("pattern", ""))
             badges += f'<span class="risk-badge sev-{sev}">{pat}</span>'
+            owasp_cat = ri.get("owasp_category")
+            if owasp_cat:
+                owasp_badges += f'<span class="owasp-badge">{html.escape(owasp_cat)}</span>'
         if not badges:
             badges = '<span style="color:var(--muted)">—</span>'
+        if not owasp_badges:
+            owasp_badges = '<span style="color:var(--muted)">—</span>'
 
         rows += (
             f'<tr class="{row_cls}">'
@@ -302,6 +346,7 @@ def _event_timeline(events: list[dict], risk_levels: list[str]) -> str:
             f'<td class="action">{action}</td>'
             f'<td class="tool">{tool}</td>'
             f'<td>{badges}</td>'
+            f'<td>{owasp_badges}</td>'
             f'<td class="witness-id">{wid}…</td>'
             f"</tr>"
         )
@@ -310,11 +355,31 @@ def _event_timeline(events: list[dict], risk_levels: list[str]) -> str:
         "<table>"
         "<thead><tr>"
         "<th>Timestamp</th><th>Action</th><th>Tool</th>"
-        "<th>Risk Indicators</th><th>Witness ID</th>"
+        "<th>Risk Indicators</th><th>OWASP</th><th>Witness ID</th>"
         "</tr></thead>"
         f"<tbody>{rows}</tbody>"
         "</table>"
     )
+
+
+def _owasp_summary(counts: dict[str, int]) -> str:
+    if not counts:
+        return "<p style='color:var(--muted)'>No OWASP-mapped risk indicators detected.</p>"
+    cells = ""
+    for owasp_id, name in OWASP_DESCRIPTIONS.items():
+        count = counts.get(owasp_id, 0)
+        if count == 0:
+            continue
+        cells += (
+            f'<div class="owasp-cell">'
+            f'<div class="owasp-id">{html.escape(owasp_id)}</div>'
+            f'<div class="owasp-name">{html.escape(name)}</div>'
+            f'<div class="owasp-count">{count}</div>'
+            f"</div>"
+        )
+    if not cells:
+        return "<p style='color:var(--muted)'>No OWASP-mapped risk indicators detected.</p>"
+    return f'<div class="owasp-grid">{cells}</div>'
 
 
 def _chain_section(chain_valid: bool) -> str:

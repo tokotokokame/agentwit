@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -45,6 +46,42 @@ class AgentwitCallback(BaseCallbackHandler):
     def __init__(self, witness_logger: "WitnessLogger") -> None:
         super().__init__()
         self._logger = witness_logger
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _now() -> str:
+        """Return current UTC time as ISO-8601 string (second precision)."""
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    @staticmethod
+    def _extract_thought(log_text: str) -> str:
+        """Extract the Thought line from a ReAct-format agent log.
+
+        Searches line by line for the first line starting with ``Thought:``
+        (case-insensitive) and returns the text after the colon.  Returns
+        an empty string when no such line is found.
+        """
+        for line in (log_text or "").splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("thought:"):
+                return stripped[len("thought:"):].strip()
+        return ""
+
+    def _write_audit(self, record: dict) -> None:
+        """Append *record* as one JSON line to ``audit.jsonl`` in the session dir.
+
+        Failures are silently swallowed so a broken audit path never
+        interrupts the agent's execution.
+        """
+        try:
+            audit_path = Path(self._logger.session_path) / "audit.jsonl"
+            with audit_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Tool events
@@ -113,11 +150,18 @@ class AgentwitCallback(BaseCallbackHandler):
         metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        prompt_preview = (prompts[0] if prompts else "")[:100]
         self._log(
             action="llm_start",
             tool=serialized.get("id", ["", ""])[-1] if serialized.get("id") else "",
             payload={"prompts": prompts, "serialized": serialized},
         )
+        self._write_audit({
+            "type": "llm_start",
+            "prompt_preview": prompt_preview,
+            "timestamp": self._now(),
+            "session_id": self._logger.session_id,
+        })
 
     def on_llm_end(
         self,
@@ -128,11 +172,26 @@ class AgentwitCallback(BaseCallbackHandler):
         tags: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
+        response_text = ""
+        try:
+            gens = response.generations
+            if gens and gens[0]:
+                gen0 = gens[0][0]
+                response_text = getattr(gen0, "text", None) or str(gen0)
+        except Exception:
+            response_text = str(getattr(response, "generations", ""))
+        response_preview = response_text[:100]
         self._log(
             action="llm_end",
             tool="",
             payload={"generations": str(response.generations)},
         )
+        self._write_audit({
+            "type": "llm_end",
+            "response_preview": response_preview,
+            "timestamp": self._now(),
+            "session_id": self._logger.session_id,
+        })
 
     def on_llm_error(
         self,
@@ -164,15 +223,25 @@ class AgentwitCallback(BaseCallbackHandler):
     ) -> None:
         tool_name = getattr(action, "tool", "") or ""
         tool_input = getattr(action, "tool_input", None)
+        log_text = getattr(action, "log", "") or ""
+        thought = self._extract_thought(log_text)
         self._log(
             action="agent_action",
             tool=tool_name,
             payload={
                 "tool": tool_name,
                 "tool_input": tool_input,
-                "log": getattr(action, "log", ""),
+                "log": log_text,
             },
         )
+        self._write_audit({
+            "type": "agent_thought",
+            "thought": thought,
+            "tool_selected": tool_name,
+            "reasoning": str(tool_input) if tool_input is not None else "",
+            "timestamp": self._now(),
+            "session_id": self._logger.session_id,
+        })
 
     def on_agent_finish(
         self,
@@ -183,14 +252,25 @@ class AgentwitCallback(BaseCallbackHandler):
         tags: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
+        log_text = getattr(finish, "log", "") or ""
+        return_values = getattr(finish, "return_values", {}) or {}
+        final_answer = return_values.get("output", log_text)
+        thought = self._extract_thought(log_text)
         self._log(
             action="agent_finish",
             tool="",
             payload={
-                "return_values": getattr(finish, "return_values", {}),
-                "log": getattr(finish, "log", ""),
+                "return_values": return_values,
+                "log": log_text,
             },
         )
+        self._write_audit({
+            "type": "agent_finish",
+            "final_answer": str(final_answer),
+            "thought": thought,
+            "timestamp": self._now(),
+            "session_id": self._logger.session_id,
+        })
 
     # ------------------------------------------------------------------
     # Chain events

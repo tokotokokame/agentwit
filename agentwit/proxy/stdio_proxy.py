@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -44,11 +46,47 @@ class StdioProxy:
         self.witness_logger = witness_logger
         self.actor = actor
 
-    async def run(self) -> int:
-        """Start subprocess and proxy stdin/stdout until the subprocess exits.
+    async def run(self, max_restarts: int = 3, restart_delay: float = 1.0) -> int:
+        """Start subprocess and proxy stdin/stdout, restarting on crash.
+
+        If the subprocess exits with a non-zero return code it is restarted
+        up to *max_restarts* times, waiting *restart_delay* seconds between
+        each attempt.  After all restarts are exhausted a ``process_crash``
+        record is appended to ``audit.jsonl`` in the witness session directory.
 
         Returns:
-            The subprocess exit code.
+            The final subprocess exit code.
+        """
+        for attempt in range(max_restarts + 1):  # initial run + up to max_restarts
+            rc = await self._run_once()
+            if rc == 0:
+                return 0
+            # Non-zero exit — decide whether to restart
+            if attempt < max_restarts:
+                await asyncio.sleep(restart_delay)
+                continue
+            # All restarts exhausted — write process_crash to audit.jsonl
+            try:
+                _audit = Path(self.witness_logger.session_path) / "audit.jsonl"
+                _audit.parent.mkdir(parents=True, exist_ok=True)
+                with _audit.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps({
+                        "type": "process_crash",
+                        "command": self.command,
+                        "returncode": rc,
+                        "restarts_attempted": max_restarts,
+                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    }) + "\n")
+            except Exception:
+                pass
+            return rc
+        return 0  # unreachable, satisfies type checkers
+
+    async def _run_once(self) -> int:
+        """Spawn the subprocess once and proxy until it exits.
+
+        Returns:
+            The subprocess exit code (0 if returncode is None).
         """
         process = await asyncio.create_subprocess_exec(
             *self.command,

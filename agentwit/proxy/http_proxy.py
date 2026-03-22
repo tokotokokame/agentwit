@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from ..security.bypass_detector import BypassDetector
 from ..monitor.backup import SessionBackup
 from ..witness.log import WitnessLogger
+from ..plugins import load_plugins
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ def create_proxy_app(
     actor: str = "proxy",
     webhook_url: str | None = None,
     webhook_on: str = "HIGH,CRITICAL",
+    timeout: float = 30.0,
 ) -> FastAPI:
     """Create and return a FastAPI app that transparently proxies to *target_url*.
 
@@ -53,10 +55,17 @@ def create_proxy_app(
     # Shared async HTTP client (created at startup, closed at shutdown).
     client: httpx.AsyncClient
 
+    # Plugins loaded once at startup and shared across all requests.
+    _plugins: list = []
+
     @app.on_event("startup")
     async def _startup() -> None:
-        nonlocal client
-        client = httpx.AsyncClient(base_url=target, timeout=60.0, follow_redirects=True)
+        nonlocal client, _plugins
+        client = httpx.AsyncClient(base_url=target, timeout=timeout, follow_redirects=True)
+        _plugins = load_plugins()
+        if _plugins:
+            logger.info("agentwit proxy: %d plugin(s) active: %s",
+                        len(_plugins), [p.name for p in _plugins])
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
@@ -122,28 +131,60 @@ def create_proxy_app(
                 or json_body.get("params", {}).get("tool")
             )
 
-        try:
-            upstream_request = client.build_request(
-                method=request.method,
-                url=upstream_url,
-                headers=forward_headers,
-                content=body,
-                params=dict(request.query_params),
-            )
-            upstream_response = await client.send(upstream_request, stream=True)
-        except httpx.RequestError as exc:
-            error_payload = {
-                "error": str(exc),
-                "params": json_body,
-            }
+        def _run_plugins(event_snapshot: dict) -> list[dict]:
+            """Run all loaded plugins against *event_snapshot* and return merged alerts."""
+            alerts: list[dict] = []
+            for _plugin in _plugins:
+                try:
+                    result = _plugin.scan(event_snapshot)
+                    if result:
+                        alerts.extend(result)
+                except Exception as _pe:
+                    logger.warning("Plugin %s scan error: %s", _plugin.name, _pe)
+            return alerts
+
+        # Retry with exponential backoff: 1s → 2s → 4s (max 3 attempts)
+        _retry_delays = (1, 2, 4)
+        upstream_response: httpx.Response | None = None
+        _conn_exc: httpx.RequestError | None = None
+        for _attempt, _delay in enumerate(_retry_delays):
+            try:
+                _req = client.build_request(
+                    method=request.method,
+                    url=upstream_url,
+                    headers=forward_headers,
+                    content=body,
+                    params=dict(request.query_params),
+                )
+                upstream_response = await client.send(_req, stream=True)
+                _conn_exc = None
+                break
+            except httpx.RequestError as exc:
+                _conn_exc = exc
+                if _attempt < len(_retry_delays) - 1:
+                    await asyncio.sleep(_delay)
+
+        if _conn_exc is not None:
+            # All retries exhausted — write connection_error to session audit.jsonl
+            _session_audit = witness_logger.session_path / "audit.jsonl"
+            _session_audit.parent.mkdir(parents=True, exist_ok=True)
+            with _session_audit.open("a", encoding="utf-8") as _af:
+                _af.write(json.dumps({
+                    "type": "connection_error",
+                    "target": f"{target}{upstream_url}",
+                    "retries": 3,
+                    "error": str(_conn_exc),
+                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }) + "\n")
+            error_payload = {"error": str(_conn_exc), "params": json_body}
             event = await witness_logger.alog_event(
                 action=action,
                 tool=tool,
                 full_payload=error_payload,
-                risk_indicators=[{"pattern": "proxy_error", "severity": "low", "matched": str(exc)}],
+                risk_indicators=[{"pattern": "proxy_error", "severity": "low", "matched": str(_conn_exc)}],
             )
             return Response(
-                content=json.dumps({"error": "upstream request failed", "detail": str(exc)}),
+                content=json.dumps({"error": "upstream request failed", "detail": str(_conn_exc)}),
                 status_code=502,
                 media_type="application/json",
                 headers={"X-Agentwit-Witness-Id": event.get("witness_id", "")},
@@ -175,10 +216,14 @@ def create_proxy_app(
                     "params": json_body,
                     "result": {"raw_sse": raw_text},
                 }
+                _plugin_alerts = _run_plugins(
+                    {"action": action, "tool": tool, "full_payload": payload}
+                )
                 event = await witness_logger.alog_event(
                     action=action,
                     tool=tool,
                     full_payload=payload,
+                    risk_indicators=_plugin_alerts or None,
                 )
                 witness_id_holder[0] = event.get("witness_id", "")
 
@@ -206,10 +251,14 @@ def create_proxy_app(
                 "result": response_json or {"raw": response_body.decode(errors="replace")},
             }
 
+            _plugin_alerts = _run_plugins(
+                {"action": action, "tool": tool, "full_payload": full_payload}
+            )
             event = await witness_logger.alog_event(
                 action=action,
                 tool=tool,
                 full_payload=full_payload,
+                risk_indicators=_plugin_alerts or None,
             )
 
             response_headers["X-Agentwit-Witness-Id"] = event.get("witness_id", "")

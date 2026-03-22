@@ -1,0 +1,53 @@
+version: "3.9"
+
+# agentwit SIEM forwarding stack
+#
+# Forwards audit.jsonl to Splunk, Elasticsearch, or Grafana Loki via
+# Fluent Bit.  Configure destinations with environment variables:
+#
+#   Splunk HEC:      SPLUNK_HOST, SPLUNK_PORT (8088), SPLUNK_HEC_TOKEN
+#   Elasticsearch:   ES_HOST, ES_PORT (9200)
+#   Grafana Loki:    LOKI_HOST, LOKI_PORT (3100)
+#
+# Usage:
+#   export SPLUNK_HEC_TOKEN=xxx
+#   docker compose -f docker-compose.siem.yml up
+#
+# The host's audit log directory (~/.agentwit) is mounted read-only into
+# the Fluent Bit container so no data is copied into the image.
+
+services:
+  fluentbit-siem:
+    image: fluent/fluent-bit:2.2
+    container_name: agentwit-fluentbit-siem
+    volumes:
+      # Host audit log directory mounted read-only
+      - ${AGENTWIT_LOG_PATH:-~/.agentwit}:/agentwit-logs:ro
+      # SIEM-specific Fluent Bit configuration
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+    environment:
+      # Override the log path inside the container if needed
+      - AGENTWIT_LOG_PATH=/agentwit-logs/audit.jsonl
+
+      # Splunk HTTP Event Collector
+      - SPLUNK_HOST=${SPLUNK_HOST:-splunk-server}
+      - SPLUNK_PORT=${SPLUNK_PORT:-8088}
+      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-}
+
+      # Elasticsearch
+      - ES_HOST=${ES_HOST:-elasticsearch}
+      - ES_PORT=${ES_PORT:-9200}
+
+      # Grafana Loki
+      - LOKI_HOST=${LOKI_HOST:-localhost}
+      - LOKI_PORT=${LOKI_PORT:-3100}
+
+      # Hostname label added to every forwarded record
+      - HOSTNAME=${HOSTNAME:-agentwit-host}
+    restart: unless-stopped
+    networks:
+      - siem-net
+
+networks:
+  siem-net:
+    driver: bridge

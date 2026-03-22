@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentwit"
-version = "0.5.0"
+version = "0.7.0"
 description = "Transparent proxy witness for AI agent ↔ MCP server communications"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -51,6 +51,20 @@ Homepage = "https://github.com/tokotokokame/agentwit"
 Repository = "https://github.com/tokotokokame/agentwit"
 Issues = "https://github.com/tokotokokame/agentwit/issues"
 Changelog = "https://github.com/tokotokokame/agentwit/releases"
+
+# ---------------------------------------------------------------------------
+# Plugin entry-points
+# ---------------------------------------------------------------------------
+# Third-party packages can register agentwit plugins by adding a section
+# like the following to their own pyproject.toml:
+#
+#   [project.entry-points."agentwit.plugins"]
+#   my_plugin = "my_package:MyPlugin"
+#
+# MyPlugin must subclass agentwit.plugins.base.PluginBase and implement scan().
+# agentwit will discover and load it automatically at proxy startup.
+[project.entry-points."agentwit.plugins"]
+# (no built-in plugins — add external plugins here)
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentwit"]

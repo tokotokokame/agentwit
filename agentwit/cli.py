@@ -31,6 +31,7 @@ def main() -> None:
 @click.option("--stdio", is_flag=True, default=False, help="stdio proxy mode: intercept subprocess stdin/stdout")
 @click.option("--webhook", default=None, help="Webhook URL for risk notifications")
 @click.option("--webhook-on", default="HIGH,CRITICAL", show_default=True, help="Comma-separated severity levels that trigger webhook")
+@click.option("--timeout", default=30, show_default=True, type=float, help="HTTP request timeout in seconds")
 @click.argument("cmd", nargs=-1, type=click.UNPROCESSED)
 def proxy(
     target: str | None,
@@ -41,6 +42,7 @@ def proxy(
     stdio: bool,
     webhook: str | None,
     webhook_on: str,
+    timeout: float,
     cmd: tuple,
 ) -> None:
     """Start the transparent proxy server (HTTP or stdio mode).
@@ -97,6 +99,7 @@ def proxy(
         actor=actor,
         webhook_url=webhook,
         webhook_on=webhook_on,
+        timeout=timeout,
     )
 
     try:
