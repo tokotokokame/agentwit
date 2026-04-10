@@ -20,7 +20,7 @@ Change one URL. No MCP server modification needed.
 [日本語版](README.ja.md) · [PyPI](https://pypi.org/project/agentwit/) · [Releases](https://github.com/tokotokokame/agentwit/releases)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-v1.0.0-orange.svg)](https://pypi.org/project/agentwit/)
+[![PyPI](https://img.shields.io/badge/PyPI-v1.1.0-orange.svg)](https://pypi.org/project/agentwit/)
 [![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![OWASP LLM Top 10](https://img.shields.io/badge/OWASP%20LLM-Top%2010%20mapped-red.svg)](docs/api-reference.md#owaspmapper)
@@ -28,6 +28,31 @@ Change one URL. No MCP server modification needed.
 
 ---
 
+
+## 🆕 What's new in v1.1.0 — Desktop App
+
+`agentwit gui` — one command launches the MCP Inspector GUI.  
+On first run, it **automatically downloads and registers a desktop shortcut**.
+
+```bash
+pip install --upgrade agentwit
+agentwit gui
+```
+
+### Download
+
+| OS | File | Link |
+|---|---|---|
+| Linux | AppImage (recommended) | [mcp-inspector_amd64.AppImage](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_amd64.AppImage) |
+| Linux | .deb | [mcp-inspector_amd64.deb](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_amd64.deb) |
+| Linux | .rpm | [mcp-inspector_amd64.rpm](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_amd64.rpm) |
+| macOS (Apple Silicon) | .dmg | [mcp-inspector_aarch64.dmg](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_aarch64.dmg) |
+| macOS (Intel) | .dmg | [mcp-inspector_x64.dmg](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_x64.dmg) |
+| Windows | .msi | [mcp-inspector_x64-setup.msi](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_x64-setup.msi) |
+
+→ [All releases](https://github.com/tokotokokame/agentwit/releases)
+
+---
 ## The problem
 
 When an AI agent calls MCP server tools, **you can't see what's happening.**
