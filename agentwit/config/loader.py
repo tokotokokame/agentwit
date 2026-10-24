@@ -122,10 +122,27 @@ def validate_config(cfg: Any) -> tuple[list[str], list[str]]:
 
     _check_section("monitor", DEFAULT_CONFIG["monitor"])
     notify = _check_section("notify", DEFAULT_CONFIG["notify"])
+    _route_kinds = {"slack", "discord", "webhook", "email"}
     for i, route in enumerate(notify.get("routes", []) or []):
         if not isinstance(route, dict):
             errors.append(f"notify.routes[{i}]: must be a mapping")
             continue
+        kind = str(route.get("kind", "")).lower()
+        if kind not in _route_kinds:
+            errors.append(
+                f"notify.routes[{i}].kind: must be one of {sorted(_route_kinds)}"
+            )
+        if kind in ("slack", "discord", "webhook") and not (
+            route.get("url") or route.get("secret_ref")
+        ):
+            errors.append(
+                f"notify.routes[{i}]: a {kind} route needs 'url' or 'secret_ref'"
+            )
+        if kind == "email":
+            if not route.get("smtp_host"):
+                errors.append(f"notify.routes[{i}]: email route needs 'smtp_host'")
+            if not route.get("mail_to"):
+                errors.append(f"notify.routes[{i}]: email route needs 'mail_to'")
         for sev in route.get("on", []) or []:
             if str(sev).upper() not in SEVERITIES:
                 errors.append(f"notify.routes[{i}].on: bad severity {sev!r}")

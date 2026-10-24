@@ -69,6 +69,9 @@ def create_proxy_app(
         _min_sev = min(_levels, key=lambda s: _SEV_ORDER.get(s, 2))
         _notifier = WebhookNotifier(url=webhook_url, min_severity=_min_sev)
 
+    from ..notifier.hub import NotificationHub
+    _hub = NotificationHub.from_config(config)
+
     # Shared async HTTP client (created at startup, closed at shutdown).
     client: httpx.AsyncClient
 
@@ -179,8 +182,11 @@ def create_proxy_app(
                 full_payload=_stored,
                 risk_indicators=_indicators or None,
             )
-            if _notifier and _indicators:
-                await _notifier.notify_if_threshold(_event, _indicators)
+            if _indicators:
+                if _notifier:
+                    await _notifier.notify_if_threshold(_event, _indicators)
+                if _hub.active:
+                    await _hub.notify(_event, _indicators)
             return _event
 
         # Retry with exponential backoff: 1s → 2s → 4s (max 3 attempts)

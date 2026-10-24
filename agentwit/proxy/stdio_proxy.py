@@ -47,7 +47,9 @@ class StdioProxy:
         self.witness_logger = witness_logger
         self.actor = actor
         from agentwit.analyzer.scorer import RiskScorer
+        from agentwit.notifier.hub import NotificationHub
         self._scorer = RiskScorer.from_config(config)
+        self._hub = NotificationHub.from_config(config)
         _redact = (config or {}).get("monitor", {}).get("redact", {}) or {}
         self._redact_on = bool(_redact.get("enabled", False))
         self._redact_keys = _redact.get("keys", []) or []
@@ -198,12 +200,14 @@ class StdioProxy:
             stored = payload
 
         try:
-            await self.witness_logger.alog_event(
+            event = await self.witness_logger.alog_event(
                 action=action,
                 tool=tool,
                 full_payload=stored,
                 risk_indicators=risk_indicators,
             )
+            if risk_indicators and self._hub.active:
+                await self._hub.notify(event, risk_indicators)
         except Exception:
             pass
 
