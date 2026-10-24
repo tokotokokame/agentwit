@@ -96,19 +96,41 @@ class RiskScorer:
             print(ind["pattern"], ind["severity"], ind["matched"])
     """
 
-    def __init__(self, patterns: list[tuple[str, str, str]] | None = None) -> None:
+    def __init__(
+        self,
+        patterns: list[tuple[str, str, str]] | None = None,
+        rules: dict[str, bool] | None = None,
+        only_tools: list[str] | None = None,
+    ) -> None:
         """Initialise the RiskScorer.
 
         Args:
             patterns: Optional override for the default :data:`RISK_PATTERNS`
                 list.  Each element must be a tuple of
                 ``(name, regex_pattern, severity)``.
+            rules: Optional ``{pattern_name: on/off}`` map. A pattern set to
+                ``False`` is disabled; names absent from the map stay enabled.
+            only_tools: Optional allow-list of tool names to score. Empty or
+                ``None`` means every tool is scored.
         """
-        self._patterns = patterns if patterns is not None else RISK_PATTERNS
+        base = patterns if patterns is not None else RISK_PATTERNS
+        if rules:
+            base = [p for p in base if rules.get(p[0], True)]
+        self._patterns = base
         self._compiled = [
             (name, re.compile(regex, re.IGNORECASE), severity)
             for name, regex, severity in self._patterns
         ]
+        self._only_tools = set(only_tools or [])
+
+    @classmethod
+    def from_config(cls, config: dict | None) -> "RiskScorer":
+        """Build a scorer from an agentwit config dict (``monitor`` section)."""
+        monitor = (config or {}).get("monitor", {})
+        return cls(
+            rules=monitor.get("rules"),
+            only_tools=monitor.get("only_tools"),
+        )
 
     def score_event(self, event: dict) -> list[dict]:
         """Score a single event and return a list of risk indicator dicts.
@@ -126,6 +148,8 @@ class RiskScorer:
             - ``matched``: The specific substring that triggered the match.
         """
         tool: str = event.get("tool") or ""
+        if self._only_tools and tool not in self._only_tools:
+            return []
         payload_text: str = json.dumps(event.get("full_payload", {}), default=str)
         haystack = f"{tool} {payload_text}"
 

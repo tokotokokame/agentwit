@@ -21,10 +21,13 @@ from ..security.bypass_detector import BypassDetector
 from ..monitor.backup import SessionBackup
 from ..witness.log import WitnessLogger
 from ..plugins import load_plugins
+from ..analyzer.scorer import RiskScorer
+from ..config.redact import redact_payload
 
 logger = logging.getLogger(__name__)
 
 _AUDIT_PATH = Path.home() / ".agentwit" / "audit.jsonl"
+_SEV_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 def create_proxy_app(
@@ -34,6 +37,7 @@ def create_proxy_app(
     webhook_url: str | None = None,
     webhook_on: str = "HIGH,CRITICAL",
     timeout: float = 30.0,
+    config: dict | None = None,
 ) -> FastAPI:
     """Create and return a FastAPI app that transparently proxies to *target_url*.
 
@@ -51,6 +55,19 @@ def create_proxy_app(
     app = FastAPI(title="agentwit proxy", version="0.1.0")
     target = target_url.rstrip("/")
     bypass_detector = BypassDetector()
+
+    # Config-driven monitoring (工程2): built-in scorer + redaction + notify.
+    _scorer = RiskScorer.from_config(config)
+    _redact = (config or {}).get("monitor", {}).get("redact", {}) or {}
+    _redact_on = bool(_redact.get("enabled", False))
+    _redact_keys = _redact.get("keys", []) or []
+
+    _notifier = None
+    if webhook_url:
+        from ..notifier.webhook import WebhookNotifier, parse_severity_list
+        _levels = parse_severity_list(webhook_on) or ["high"]
+        _min_sev = min(_levels, key=lambda s: _SEV_ORDER.get(s, 2))
+        _notifier = WebhookNotifier(url=webhook_url, min_severity=_min_sev)
 
     # Shared async HTTP client (created at startup, closed at shutdown).
     client: httpx.AsyncClient
@@ -143,6 +160,29 @@ def create_proxy_app(
                     logger.warning("Plugin %s scan error: %s", _plugin.name, _pe)
             return alerts
 
+        async def _record(
+            _action: str, _tool: str | None, _raw_payload: dict,
+            _plugin_alerts: list[dict],
+        ) -> dict:
+            """Score on the raw payload, store a redacted copy, notify on risk."""
+            _indicators = _scorer.score_event(
+                {"action": _action, "tool": _tool, "full_payload": _raw_payload}
+            )
+            if _plugin_alerts:
+                _indicators = _indicators + _plugin_alerts
+            _stored = (
+                redact_payload(_raw_payload, _redact_keys)
+                if _redact_on else _raw_payload
+            )
+            _event = await witness_logger.alog_event(
+                action=_action, tool=_tool,
+                full_payload=_stored,
+                risk_indicators=_indicators or None,
+            )
+            if _notifier and _indicators:
+                await _notifier.notify_if_threshold(_event, _indicators)
+            return _event
+
         # Retry with exponential backoff: 1s → 2s → 4s (max 3 attempts)
         _retry_delays = (1, 2, 4)
         upstream_response: httpx.Response | None = None
@@ -176,7 +216,10 @@ def create_proxy_app(
                     "error": str(_conn_exc),
                     "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 }) + "\n")
-            error_payload = {"error": str(_conn_exc), "params": json_body}
+            error_payload = {
+                "error": str(_conn_exc),
+                "params": redact_payload(json_body, _redact_keys) if _redact_on else json_body,
+            }
             event = await witness_logger.alog_event(
                 action=action,
                 tool=tool,
@@ -219,12 +262,7 @@ def create_proxy_app(
                 _plugin_alerts = _run_plugins(
                     {"action": action, "tool": tool, "full_payload": payload}
                 )
-                event = await witness_logger.alog_event(
-                    action=action,
-                    tool=tool,
-                    full_payload=payload,
-                    risk_indicators=_plugin_alerts or None,
-                )
+                event = await _record(action, tool, payload, _plugin_alerts)
                 witness_id_holder[0] = event.get("witness_id", "")
 
             response_headers["X-Agentwit-Witness-Id"] = witness_id_holder[0]
@@ -254,12 +292,7 @@ def create_proxy_app(
             _plugin_alerts = _run_plugins(
                 {"action": action, "tool": tool, "full_payload": full_payload}
             )
-            event = await witness_logger.alog_event(
-                action=action,
-                tool=tool,
-                full_payload=full_payload,
-                risk_indicators=_plugin_alerts or None,
-            )
+            event = await _record(action, tool, full_payload, _plugin_alerts)
 
             response_headers["X-Agentwit-Witness-Id"] = event.get("witness_id", "")
 

@@ -41,10 +41,16 @@ class StdioProxy:
         command: list[str],
         witness_logger: "WitnessLogger",
         actor: str = "stdio_proxy",
+        config: dict | None = None,
     ) -> None:
         self.command = command
         self.witness_logger = witness_logger
         self.actor = actor
+        from agentwit.analyzer.scorer import RiskScorer
+        self._scorer = RiskScorer.from_config(config)
+        _redact = (config or {}).get("monitor", {}).get("redact", {}) or {}
+        self._redact_on = bool(_redact.get("enabled", False))
+        self._redact_keys = _redact.get("keys", []) or []
 
     async def run(self, max_restarts: int = 3, restart_delay: float = 1.0) -> int:
         """Start subprocess and proxy stdin/stdout, restarting on crash.
@@ -179,19 +185,23 @@ class StdioProxy:
 
         risk_indicators: list[dict] = []
         try:
-            from agentwit.analyzer.scorer import RiskScorer
-
-            scorer = RiskScorer()
-            temp_event = {"action": action, "tool": tool, "full_payload": payload}
-            risk_indicators = scorer.score_event(temp_event)
+            risk_indicators = self._scorer.score_event(
+                {"action": action, "tool": tool, "full_payload": payload}
+            )
         except Exception:
             pass
+
+        if self._redact_on:
+            from agentwit.config.redact import redact_payload
+            stored = redact_payload(payload, self._redact_keys)
+        else:
+            stored = payload
 
         try:
             await self.witness_logger.alog_event(
                 action=action,
                 tool=tool,
-                full_payload=payload,
+                full_payload=stored,
                 risk_indicators=risk_indicators,
             )
         except Exception:
@@ -202,7 +212,10 @@ async def run_stdio_proxy(
     command: list[str],
     witness_logger: "WitnessLogger",
     actor: str = "stdio_proxy",
+    config: dict | None = None,
 ) -> int:
     """Convenience coroutine to run the stdio proxy and return the exit code."""
-    proxy = StdioProxy(command=command, witness_logger=witness_logger, actor=actor)
+    proxy = StdioProxy(
+        command=command, witness_logger=witness_logger, actor=actor, config=config
+    )
     return await proxy.run()

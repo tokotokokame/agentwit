@@ -58,6 +58,9 @@ def proxy(
     import asyncio
 
     from .witness.log import WitnessLogger
+    from .config import load_config
+
+    cfg = load_config()
 
     if stdio:
         if not cmd:
@@ -73,11 +76,14 @@ def proxy(
 
         from .proxy.stdio_proxy import run_stdio_proxy
 
-        exit_code = asyncio.run(run_stdio_proxy(list(cmd), logger, actor=actor))
+        exit_code = asyncio.run(
+            run_stdio_proxy(list(cmd), logger, actor=actor, config=cfg)
+        )
         logger.close()
         sys.exit(exit_code)
 
-    # HTTP mode
+    # HTTP mode — CLI --target wins, else config's proxy.target.
+    target = target or cfg.get("proxy", {}).get("target")
     if not target:
         click.echo("Error: --target is required in HTTP proxy mode", err=True)
         sys.exit(1)
@@ -100,6 +106,7 @@ def proxy(
         webhook_url=webhook,
         webhook_on=webhook_on,
         timeout=timeout,
+        config=cfg,
     )
 
     try:
