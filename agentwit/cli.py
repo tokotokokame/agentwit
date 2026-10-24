@@ -412,10 +412,127 @@ def diff(session_a: str, session_b: str) -> None:
     else:
         click.echo(click.style("  Risk profiles are identical.", fg="green"))
 
-@cli.command("gui")
+@main.command("gui")
 @click.argument("extra_args", nargs=-1, type=click.UNPROCESSED)
 def gui_command(extra_args):
     """MCP Inspector GUI を起動する。"""
     import sys
     from agentwit.gui_launcher import main as _gui_main
     sys.exit(_gui_main(list(extra_args)))
+
+
+# ---------------------------------------------------------------------------
+# init / config
+# ---------------------------------------------------------------------------
+
+@main.command()
+def init() -> None:
+    """Create ~/.agentwit/ with a default config and an empty secrets.env.
+
+    Idempotent — existing files are kept. No secrets are written; add them
+    to secrets.env yourself and reference them from config.yaml as
+    ${env:NAME}.
+    """
+    from .config import init_home
+
+    for key, val in init_home().items():
+        click.echo(f"  {key:8s} {val}")
+    click.echo("")
+    click.echo("Next: put credentials in ~/.agentwit/secrets.env (chmod 600),")
+    click.echo("then 'agentwit config set ...' to wire them up.")
+
+
+@main.group()
+def config() -> None:
+    """View, change and validate configuration."""
+
+
+@config.command("get")
+@click.argument("key", required=False)
+def config_get(key: str | None) -> None:
+    """Show the whole config, or one dotted KEY (e.g. proxy.port).
+
+    Secret references are shown as-is (${env:...}); secrets are never
+    expanded to the terminal.
+    """
+    import yaml
+
+    from .config import load_config
+
+    cfg = load_config(resolve_secrets=False)
+    if not key:
+        click.echo(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True).rstrip())
+        return
+    cur: object = cfg
+    for part in key.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            click.echo(f"No such key: {key}", err=True)
+            sys.exit(1)
+        cur = cur[part]
+    if isinstance(cur, (dict, list)):
+        click.echo(yaml.safe_dump(cur, sort_keys=False, allow_unicode=True).rstrip())
+    else:
+        click.echo(str(cur))
+
+
+@config.command("set")
+@click.argument("key")
+@click.argument("value")
+def config_set(key: str, value: str) -> None:
+    """Set a dotted KEY to VALUE (YAML-typed), if it keeps the config valid.
+
+    Examples:
+
+        agentwit config set proxy.port 9000
+        agentwit config set monitor.rules.data_exfil false
+        agentwit config set proxy.target http://localhost:3000
+    """
+    import yaml
+
+    from .config import load_config, save_config, validate_config
+
+    cfg = load_config(resolve_secrets=False)
+    parsed = yaml.safe_load(value)
+
+    parts = key.split(".")
+    cur = cfg
+    for p in parts[:-1]:
+        nxt = cur.get(p)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[p] = nxt
+        cur = nxt
+    cur[parts[-1]] = parsed
+
+    errors, warnings = validate_config(cfg)
+    if errors:
+        click.echo("Rejected — that change would make the config invalid:", err=True)
+        for e in errors:
+            click.echo(f"  - {e}", err=True)
+        sys.exit(1)
+    for w in warnings:
+        click.echo(click.style(f"warning: {w}", fg="yellow"))
+    save_config(cfg)
+    click.echo(f"set {key} = {parsed!r}")
+
+
+@config.command("validate")
+def config_validate() -> None:
+    """Validate the on-disk config.yaml and report errors/warnings."""
+    import yaml
+
+    from .config import config_home, validate_config
+
+    path = config_home() / "config.yaml"
+    if not path.exists():
+        click.echo("No config.yaml — run 'agentwit init' first.", err=True)
+        sys.exit(1)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    errors, warnings = validate_config(raw)
+    for w in warnings:
+        click.echo(click.style(f"warning: {w}", fg="yellow"))
+    for e in errors:
+        click.echo(click.style(f"error:   {e}", fg="red"))
+    if errors:
+        sys.exit(1)
+    click.echo(click.style("config.yaml is valid", fg="green", bold=True))
