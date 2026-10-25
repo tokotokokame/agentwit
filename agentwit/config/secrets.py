@@ -94,3 +94,54 @@ def resolve(value, home: Path | None = None):
     """Convenience one-shot resolver against the default home."""
     from .loader import config_home
     return SecretResolver(home or config_home()).resolve(value)
+
+
+_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def set_secret(name: str, value: str, home: Path | None = None) -> None:
+    """Write ``NAME=value`` into ~/.agentwit/secrets.env (0600), replacing any
+    existing line for NAME. The value is never logged or echoed.
+
+    Only the env-file is touched; os.environ is left alone and the plaintext
+    stays in the 0600 file.
+    """
+    from .loader import config_home
+
+    if not _NAME_RE.match(name):
+        raise ValueError(f"invalid secret name: {name!r}")
+    if "\n" in value or "\r" in value:
+        raise ValueError("secret value must be single-line")
+
+    home = home or config_home()
+    home.mkdir(parents=True, exist_ok=True)
+    try:
+        home.chmod(0o700)
+    except OSError:
+        pass
+    path = home / "secrets.env"
+    existing = _parse_env_file(path) if path.exists() else {}
+    existing[name] = value
+
+    header = ("# agentwit secrets — chmod 600, never commit.\n"
+              "# Referenced from config.yaml as ${env:NAME}.\n")
+    body = "".join(f"{k}={v}\n" for k, v in existing.items())
+    # write 0600 from the start: create via os.open with mode, then write
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, (header + body).encode("utf-8"))
+    finally:
+        os.close(fd)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def list_secret_names(home: Path | None = None) -> list[str]:
+    """Return the NAMES defined in secrets.env — never the values."""
+    from .loader import config_home
+
+    home = home or config_home()
+    path = home / "secrets.env"
+    return sorted(_parse_env_file(path).keys()) if path.exists() else []

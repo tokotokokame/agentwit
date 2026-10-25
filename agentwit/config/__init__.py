@@ -17,7 +17,7 @@ from .loader import (
     init_home,
     check_permissions,
 )
-from .secrets import resolve, SecretResolver
+from .secrets import resolve, SecretResolver, set_secret, list_secret_names
 from .redact import redact_payload
 
 __all__ = [
@@ -29,5 +29,7 @@ __all__ = [
     "check_permissions",
     "resolve",
     "SecretResolver",
+    "set_secret",
+    "list_secret_names",
     "redact_payload",
 ]

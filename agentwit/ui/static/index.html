@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>agentwit console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ink:#0e1726;--panel:#fff;--panel-2:#f4f6fb;--line:#d8dee9;--fg:#111826;--fg-dim:#5a6578;
+    --accent:#1f6feb;--accent-soft:#e7f0ff;
+    --low:#3f8f5b;--low-bg:#e8f3ec;--med:#b7791f;--med-bg:#fbf1dd;
+    --high:#c2410c;--high-bg:#fbe9df;--crit:#b4232b;--crit-bg:#f8e0e1;--ok:#3f8f5b;
+    --radius:10px;--mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;--sans:'IBM Plex Sans',system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --ink:#060b14;--panel:#111a28;--panel-2:#0c141f;--line:#273449;--fg:#e7edf6;--fg-dim:#8b97ab;
+    --accent:#5a9bff;--accent-soft:#132742;--low:#6cc088;--low-bg:#122a1c;--med:#e0b354;--med-bg:#2c2413;
+    --high:#f08a5a;--high-bg:#2e1b11;--crit:#f2707a;--crit-bg:#2e1215;--ok:#6cc088;color-scheme:dark;}}
+  :root[data-theme="dark"]{
+    --ink:#060b14;--panel:#111a28;--panel-2:#0c141f;--line:#273449;--fg:#e7edf6;--fg-dim:#8b97ab;
+    --accent:#5a9bff;--accent-soft:#132742;--low:#6cc088;--low-bg:#122a1c;--med:#e0b354;--med-bg:#2c2413;
+    --high:#f08a5a;--high-bg:#2e1b11;--crit:#f2707a;--crit-bg:#2e1215;--ok:#6cc088;color-scheme:dark;}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--panel-2);color:var(--fg);font-family:var(--sans);line-height:1.5}
+  h1,h2,h3{margin:0;text-wrap:balance}
+  button{font-family:inherit}
+  .wrap{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+  .rail{background:var(--ink);color:#e7edf6;border-radius:var(--radius);padding:16px 18px;display:flex;flex-wrap:wrap;gap:18px 26px;align-items:center}
+  .brand{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .brand b{font-size:18px;font-weight:700}.brand span{font-family:var(--mono);font-size:11px;color:#8b97ab}
+  .stat{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .stat .k{font-size:11px;color:#8b97ab}.stat .v{font-family:var(--mono);font-size:13px;color:#e7edf6;font-variant-numeric:tabular-nums}
+  .run{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block}
+  .spacer{flex:1 1 40px}
+  .theme-btn{background:transparent;border:1px solid #2a3850;color:#cdd6e4;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+  nav{display:flex;flex-wrap:wrap;gap:4px;margin:18px 0}
+  nav button{background:transparent;border:1px solid transparent;color:var(--fg-dim);padding:8px 13px;border-radius:999px;font-size:13.5px;font-weight:500;cursor:pointer}
+  nav button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 30%,transparent)}
+  nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .grid{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start}
+  @media (max-width:760px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .panel .hd{padding:15px 18px;border-bottom:1px solid var(--line)}
+  .panel .hd h2{font-size:15px;font-weight:600}.panel .hd p{margin:4px 0 0;font-size:12.5px;color:var(--fg-dim)}
+  .panel .bd{padding:16px 18px;display:flex;flex-direction:column;gap:15px}
+  section[hidden]{display:none}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12.5px;font-weight:600}.field .hint{font-size:11.5px;color:var(--fg-dim)}
+  .field input,.field select{font-family:var(--mono);font-size:13px;color:var(--fg);background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;min-width:0}
+  .field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media (max-width:440px){.row2{grid-template-columns:1fr}}
+  .warnline{font-size:11.5px;color:var(--high);display:none}.warnline.show{display:block}
+  .rule{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .rule:last-child{border-bottom:0}.rule .meta{flex:1;min-width:0}
+  .rule .meta b{font-family:var(--mono);font-size:13px;font-weight:600;display:block}.rule .meta span{font-size:11.5px;color:var(--fg-dim)}
+  .sev{font-family:var(--mono);font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;white-space:nowrap}
+  .sev.low{color:var(--low);background:var(--low-bg)}.sev.medium{color:var(--med);background:var(--med-bg)}
+  .sev.high{color:var(--high);background:var(--high-bg)}.sev.critical{color:var(--crit);background:var(--crit-bg)}
+  .sw{position:relative;width:40px;height:23px;flex:none}
+  .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+  .sw .track{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:background .15s}
+  .sw .knob{position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .sw input:checked+.track{background:var(--accent)}.sw input:checked+.track+.knob{left:18px}
+  .sw input:focus-visible+.track{outline:2px solid var(--accent);outline-offset:2px}
+  .route{border:1px solid var(--line);border-radius:9px;padding:12px 13px;display:flex;flex-direction:column;gap:8px}
+  .route .top{display:flex;align-items:center;gap:9px}
+  .route .kind{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 8px;border-radius:5px;background:var(--accent-soft);color:var(--accent)}
+  .route .nm{font-weight:600;font-size:13.5px;flex:1;min-width:0}
+  .route .meta{font-family:var(--mono);font-size:11.5px;color:var(--fg-dim);word-break:break-all}
+  .route .on{display:flex;gap:5px;flex-wrap:wrap}
+  .linkbtn{background:transparent;border:0;color:var(--accent);font-size:12.5px;cursor:pointer;padding:0}
+  .ghost{background:var(--panel-2);border:1px dashed var(--line);color:var(--fg-dim);border-radius:9px;padding:11px;font-size:13px;cursor:pointer;width:100%}
+  .mono2{font-family:var(--mono);font-size:.92em;background:var(--panel-2);padding:1px 5px;border-radius:4px;border:1px solid var(--line);word-break:break-all}
+  .addform{display:flex;flex-direction:column;gap:12px;border:1px solid var(--line);border-radius:9px;padding:14px;background:var(--panel-2)}
+  .addform-actions{display:flex;align-items:center;gap:14px}
+  .addform .primary{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .connect{border:1px solid var(--line);border-radius:9px;padding:13px 14px;background:var(--panel-2);display:flex;flex-direction:column;gap:7px}
+  .connect b{font-size:13px}.connect p{margin:0;font-size:12.5px;color:var(--fg-dim);line-height:1.6}
+  .statusgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}@media (max-width:560px){.statusgrid{grid-template-columns:repeat(2,1fr)}}
+  .scard{border:1px solid var(--line);border-radius:9px;padding:11px 12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+  .scard .k{font-size:11px;color:var(--fg-dim)}.scard .v{font-family:var(--mono);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .plugins{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;display:inline-flex;gap:6px;align-items:center}
+  .chip em{font-style:normal;font-size:10px;color:var(--fg-dim);text-transform:uppercase}
+  .tablewrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;color:var(--fg-dim);font-weight:600}td.t,td.tool{font-family:var(--mono)}
+  td .stripe{display:inline-block;width:3px;height:14px;border-radius:2px;margin-right:8px;vertical-align:-2px}
+  .stripe.low{background:var(--low)}.stripe.medium{background:var(--med)}.stripe.high{background:var(--high)}.stripe.critical{background:var(--crit)}
+  .mirror{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+  .mirror .hd{display:flex;align-items:center;justify-content:space-between}
+  .mirror pre{margin:0;padding:15px 16px;font-family:var(--mono);font-size:12px;line-height:1.65;color:var(--fg);overflow-x:auto;max-height:52vh}
+  .yk{color:var(--accent)}.yv{color:var(--fg)}.yc{color:var(--fg-dim)}
+  .save{display:flex;gap:10px;align-items:center;padding:13px 16px;border-top:1px solid var(--line)}
+  .save button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .save .note{font-size:11.5px;color:var(--fg-dim)}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);transform:translateX(-50%) translateY(20px);background:var(--ink);color:#e7edf6;padding:11px 18px;border-radius:9px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:20}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .proto{font-size:11.5px;color:var(--fg-dim)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="rail">
+    <div class="brand"><b>agentwit</b><span>witness proxy · console</span></div>
+    <div class="spacer"></div>
+    <div class="run"><span class="dot"></span>control plane</div>
+    <div class="stat"><span class="k">watching</span><span class="v" id="r-target">—</span></div>
+    <div class="stat"><span class="k">flagged (latest session)</span><span class="v" id="r-count">—</span></div>
+    <button class="theme-btn" id="theme">◐ theme</button>
+  </div>
+  <nav role="tablist">
+    <button role="tab" aria-selected="true" data-sec="monitor">Monitoring</button>
+    <button role="tab" aria-selected="false" data-sec="notify">Notifications</button>
+    <button role="tab" aria-selected="false" data-sec="activity">Activity</button>
+    <button role="tab" aria-selected="false" data-sec="proxy">Proxy</button>
+    <button role="tab" aria-selected="false" data-sec="system">System</button>
+  </nav>
+  <div class="grid">
+    <div>
+      <section id="sec-monitor" class="panel">
+        <div class="hd"><h2>What agentwit watches for</h2><p>Turn risk patterns on or off, and limit which tools are scored.</p></div>
+        <div class="bd">
+          <div id="rules"></div>
+          <div class="field"><label for="onlytools">Only score these tools</label>
+            <input type="text" id="onlytools" placeholder="leave empty to score every tool" autocomplete="off">
+            <span class="hint">Comma-separated tool names. Empty means every tool is scored.</span></div>
+          <div class="field" style="flex-direction:row;align-items:center;gap:12px">
+            <span class="sw"><input type="checkbox" id="redact"><span class="track"></span><span class="knob"></span></span>
+            <span><label for="redact" style="display:block">Hide secrets in the log</label>
+              <span class="hint">Values like password, token, api_key are masked before anything is written. Detection still fires.</span></span></div>
+        </div>
+      </section>
+      <section id="sec-notify" class="panel" hidden>
+        <div class="hd"><h2>Where alerts go</h2><p>Each destination gets alerts at the severities you choose. Credentials stay in secrets.env — only the reference name is shown here.</p></div>
+        <div class="bd" id="routes"></div>
+        <div class="bd" style="padding-top:0;gap:10px">
+          <button class="ghost" id="addroute">+ Add a destination</button>
+          <div class="addform" id="addform" hidden>
+            <div class="field"><label for="nf-kind">Type</label>
+              <select id="nf-kind"><option value="slack">Slack</option><option value="discord">Discord</option><option value="email">Email</option></select></div>
+            <div class="field"><label for="nf-name">Name</label><input type="text" id="nf-name" placeholder="e.g. Security Slack" autocomplete="off"></div>
+            <div class="field" id="nf-f-url"><label for="nf-url">Webhook URL</label>
+              <input type="password" id="nf-url" placeholder="https://hooks.slack.com/services/…" autocomplete="off">
+              <span class="hint">Written to <span class="mono2">~/.agentwit/secrets.env</span> (chmod 600). Config keeps only a <span class="mono2">${env:…}</span> reference.</span></div>
+            <div id="nf-f-email" hidden style="display:flex;flex-direction:column;gap:12px">
+              <div class="row2"><div class="field"><label for="nf-smtp">SMTP host</label><input type="text" id="nf-smtp" placeholder="smtp.fastmail.com" autocomplete="off"></div>
+                <div class="field"><label for="nf-smtpport">Port</label><input type="number" id="nf-smtpport" value="587" min="1" max="65535"></div></div>
+              <div class="field"><label for="nf-to">Send alerts to</label><input type="text" id="nf-to" placeholder="oncall@example.com" autocomplete="off"></div>
+              <div class="field"><label for="nf-smtppass">SMTP password</label><input type="password" id="nf-smtppass" placeholder="app password" autocomplete="off">
+                <span class="hint">Written to <span class="mono2">secrets.env</span>. Host and recipient go in config.yaml; the password never does.</span></div>
+            </div>
+            <div class="addform-actions"><button class="primary" id="nf-save">Add destination</button><button class="linkbtn" id="nf-cancel">Cancel</button></div>
+          </div>
+        </div>
+      </section>
+      <section id="sec-activity" class="panel" hidden>
+        <div class="hd"><h2>Recent detections</h2><p>The latest flagged calls from the newest witness session.</p></div>
+        <div class="bd" style="padding:0"><div class="tablewrap"><table>
+          <thead><tr><th>Time</th><th>Tool</th><th>Patterns</th><th>Severity</th></tr></thead>
+          <tbody id="rows"></tbody></table></div></div>
+      </section>
+      <section id="sec-proxy" class="panel" hidden>
+        <div class="hd"><h2>Proxy</h2><p>Where agentwit sits and which upstream MCP server it forwards to.</p></div>
+        <div class="bd">
+          <div class="field"><label for="target">Upstream MCP server</label><input type="text" id="target" autocomplete="off"></div>
+          <div class="row2">
+            <div class="field"><label for="host">Listen host</label><input type="text" id="host" autocomplete="off">
+              <span class="warnline" id="hostwarn">Binding this exposes the proxy off-box. 127.0.0.1 is safer.</span></div>
+            <div class="field"><label for="port">Listen port</label><input type="number" id="port" min="1" max="65535"></div>
+          </div>
+          <div class="connect"><b>Connecting your agent</b>
+            <p>Point the MCP client at agentwit instead of the server: use <span class="mono2" id="c-proxy">—</span> in place of <span class="mono2" id="c-target">—</span>. The server needs no changes.</p>
+            <p>Run agentwit on the same host as the MCP server — traffic stays on loopback, no extra port opened. From another machine, tunnel over SSH: <span class="mono2">ssh -L 8765:127.0.0.1:8765 your-server</span>.</p></div>
+        </div>
+      </section>
+      <section id="sec-system" class="panel" hidden>
+        <div class="hd"><h2>System</h2><p>Loaded plugins, backups, and where logs are kept.</p></div>
+        <div class="bd">
+          <div class="statusgrid">
+            <div class="scard"><span class="k">Home</span><span class="v" id="s-home">—</span></div>
+            <div class="scard"><span class="k">Plugins</span><span class="v" id="s-plugins">—</span></div>
+            <div class="scard"><span class="k">Backups</span><span class="v" id="s-backups">—</span></div>
+            <div class="scard"><span class="k">Secrets set</span><span class="v" id="s-secrets">—</span></div>
+          </div>
+          <div class="field"><label>Loaded detection plugins</label><div class="plugins" id="pluginlist"></div>
+            <span class="hint">Third-party plugins install as packages and load automatically at startup.</span></div>
+          <div class="field"><label for="logdir">Witness log directory</label><input type="text" id="logdir" autocomplete="off"></div>
+          <div class="field"><label for="backups">Keep this many backups</label><input type="number" id="backups" min="1" max="500">
+            <span class="hint">Oldest sessions are rotated out once the limit is reached.</span></div>
+          <div class="field"><label>Recent backups</label><div class="tablewrap"><table>
+            <thead><tr><th>Backup</th><th>Size</th></tr></thead><tbody id="backuprows"></tbody></table></div></div>
+        </div>
+      </section>
+    </div>
+    <div class="panel mirror">
+      <div class="hd"><h2>config.yaml</h2><button class="linkbtn" id="copy">Copy</button></div>
+      <pre id="yaml">loading…</pre>
+      <div class="save"><button id="savebtn">Save changes</button><span class="note">then reloads live (SIGHUP)</span></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"><span id="toasttext">Saved</span></div>
+<script>
+(function(){
+  "use strict";
+  var CSRF="__CSRF__";
+  var $=function(s,r){return (r||document).querySelector(s)};
+  var SEVMAP={shell_exec:"high",privilege_escalation:"critical",credential_access:"high",
+    data_exfil:"medium",persistence:"high",lateral_movement:"high"};
+  var DESC={shell_exec:"Running commands / shells",privilege_escalation:"sudo, setuid, chown root",
+    credential_access:"Reading passwords, tokens, keys",data_exfil:"Outbound fetch / upload",
+    persistence:"cron, systemd, autostart",lateral_movement:"nmap, host discovery, netstat"};
+  var cfg=null;
+
+  function api(path,opts){return fetch(path,opts).then(function(r){return r.json().then(function(j){
+    if(!r.ok)throw new Error(j.error||("HTTP "+r.status)+(j.details?": "+j.details.join("; "):""));return j;});});}
+  function toast(m){var t=$("#toast");$("#toasttext").textContent=m;t.classList.add("show");
+    clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("show");},2600);}
+
+  // ---- load everything ----
+  Promise.all([api("/api/config"),api("/api/status"),api("/api/detections")])
+    .then(function(r){cfg=r[0];paintConfig();paintStatus(r[1]);paintDetections(r[2].detections);render();})
+    .catch(function(e){$("#yaml").textContent="Failed to load: "+e.message;});
+
+  function paintConfig(){
+    var m=cfg.monitor||{},p=cfg.proxy||{};
+    // rules
+    var rs=m.rules||{},box=$("#rules");box.innerHTML="";
+    Object.keys(rs).forEach(function(name){
+      var sev=SEVMAP[name]||"medium";
+      var row=document.createElement("div");row.className="rule";
+      row.innerHTML='<label class="sw"><input type="checkbox" '+(rs[name]?"checked":"")+' data-rule="'+name+'"><span class="track"></span><span class="knob"></span></label>'+
+        '<span class="meta"><b>'+name+'</b><span>'+(DESC[name]||"")+'</span></span><span class="sev '+sev+'">'+sev.toUpperCase()+'</span>';
+      row.querySelector("input").addEventListener("change",function(e){cfg.monitor.rules[name]=e.target.checked;render();});
+      box.appendChild(row);
+    });
+    $("#onlytools").value=(m.only_tools||[]).join(", ");
+    $("#redact").checked=!!((m.redact||{}).enabled);
+    $("#target").value=p.target||"";$("#host").value=p.host||"127.0.0.1";$("#port").value=p.port||8765;
+    $("#logdir").value=p.log_dir||"~/.agentwit/witness_logs";
+    $("#backups").value=(cfg.backups||{}).keep||20;
+    paintRoutes();
+  }
+
+  function paintRoutes(){
+    var box=$("#routes");box.innerHTML="";var routes=((cfg.notify||{}).routes)||[];
+    routes.forEach(function(rt,i){
+      var on=(rt.on||[]).map(function(s){return '<span class="sev '+String(s).toLowerCase()+'">'+String(s).toUpperCase()+'</span>';}).join("");
+      var meta=rt.kind==="email"?((rt.smtp_host||"smtp")+" → "+((rt.mail_to||[]).join(", ")||"?")):(rt.url||rt.secret_ref||"");
+      var el=document.createElement("div");el.className="route";
+      el.innerHTML='<div class="top"><span class="kind">'+rt.kind+'</span><span class="nm">'+(rt.name||rt.kind)+'</span>'+
+        '<button class="linkbtn" data-del="'+i+'">Remove</button></div><div class="meta">'+meta+'</div><div class="on">'+on+'</div>';
+      el.querySelector("[data-del]").addEventListener("click",function(){cfg.notify.routes.splice(i,1);paintRoutes();render();});
+      box.appendChild(el);
+    });
+  }
+
+  function paintStatus(s){
+    $("#s-home").textContent=s.home.replace(/^.*\//,"~/…/")||"—";
+    $("#s-plugins").textContent=s.plugins.length;$("#s-backups").textContent=s.backups.length;
+    $("#s-secrets").textContent=s.secrets.length;
+    var pl=$("#pluginlist");pl.innerHTML="";
+    s.plugins.forEach(function(n){var c=document.createElement("span");c.className="chip";c.innerHTML=n+' <em>loaded</em>';pl.appendChild(c);});
+    if(!s.plugins.length)pl.innerHTML='<span class="hint">No plugins loaded.</span>';
+    var br=$("#backuprows");br.innerHTML="";
+    s.backups.forEach(function(b){var tr=document.createElement("tr");tr.innerHTML='<td class="t">'+b.name+'</td><td>'+Math.round(b.size/1024)+' KB</td>';br.appendChild(tr);});
+    if(!s.backups.length)br.innerHTML='<tr><td colspan="2" class="hint">No backups yet.</td></tr>';
+  }
+
+  function paintDetections(d){
+    var tb=$("#rows");tb.innerHTML="";$("#r-count").textContent=d.length;
+    if(!d.length){tb.innerHTML='<tr><td colspan="4" class="hint">No detections in the latest session.</td></tr>';return;}
+    d.forEach(function(e){var sev=e.severity||"low";var tr=document.createElement("tr");
+      tr.innerHTML='<td class="t">'+(e.timestamp||"").replace("T"," ").replace("Z","")+'</td><td class="tool">'+(e.tool||"")+'</td>'+
+        '<td class="tool">'+(e.patterns||[]).join(", ")+'</td>'+
+        '<td><span class="stripe '+sev+'"></span><span class="sev '+sev+'">'+sev.toUpperCase()+'</span></td>';
+      tb.appendChild(tr);});
+  }
+
+  // ---- edits feeding back into cfg ----
+  function collect(){
+    cfg.proxy.target=$("#target").value;cfg.proxy.host=$("#host").value;cfg.proxy.port=parseInt($("#port").value,10)||8765;
+    cfg.proxy.log_dir=$("#logdir").value;
+    cfg.monitor.only_tools=$("#onlytools").value.split(",").map(function(s){return s.trim();}).filter(Boolean);
+    cfg.monitor.redact=cfg.monitor.redact||{};cfg.monitor.redact.enabled=$("#redact").checked;
+    cfg.backups=cfg.backups||{};cfg.backups.keep=parseInt($("#backups").value,10)||20;
+  }
+  ["target","host","port","onlytools","logdir","backups"].forEach(function(id){
+    $("#"+id).addEventListener("input",function(){collect();render();});});
+  $("#redact").addEventListener("change",function(){collect();render();});
+
+  function render(){
+    collect();
+    var w=$("#hostwarn");(cfg.proxy.host==="0.0.0.0"||cfg.proxy.host==="::")?w.classList.add("show"):w.classList.remove("show");
+    $("#r-target").textContent=(cfg.proxy.target||"").replace(/^https?:\/\//,"");
+    $("#c-proxy").textContent="http://"+(cfg.proxy.host==="0.0.0.0"?"localhost":cfg.proxy.host)+":"+cfg.proxy.port;
+    $("#c-target").textContent=cfg.proxy.target||"—";
+    $("#yaml").innerHTML=yaml(cfg);
+  }
+  function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function yaml(c){
+    var L=[],kv=function(k,v){L.push('<span class="yk">'+esc(k)+'</span><span class="yv">'+esc(v)+'</span>');},
+        key=function(k){L.push('<span class="yk">'+esc(k)+'</span>');},gap=function(){L.push("");};
+    L.push('<span class="yc"># generated — secrets stay in secrets.env</span>');gap();
+    key("proxy:");kv("  target: ",c.proxy.target);kv("  host: ",c.proxy.host);kv("  port: ",c.proxy.port);kv("  log_dir: ",c.proxy.log_dir||"~/.agentwit/witness_logs");gap();
+    key("backups:");kv("  keep: ",(c.backups||{}).keep||20);gap();
+    key("monitor:");key("  rules:");var rs=c.monitor.rules||{};Object.keys(rs).forEach(function(n){kv("    "+n+": ",rs[n]?"true":"false");});
+    kv("  only_tools: ",(c.monitor.only_tools&&c.monitor.only_tools.length)?"["+c.monitor.only_tools.join(", ")+"]":"[]");
+    key("  redact:");kv("    enabled: ",((c.monitor.redact||{}).enabled)?"true":"false");gap();
+    key("notify:");var rt=(c.notify||{}).routes||[];
+    if(!rt.length){kv("  routes: ","[]");}
+    else{key("  routes:");rt.forEach(function(r){kv("    - kind: ",r.kind);kv("      name: ",r.name||"");
+      if(r.kind==="email"){kv("      smtp_host: ",r.smtp_host||"");kv("      mail_to: ","["+((r.mail_to||[]).join(", "))+"]");if(r.password_ref)kv("      password_ref: ",r.password_ref);}
+      else{kv("      url: ",r.url||r.secret_ref||"");}
+      kv("      on: ","["+((r.on||[]).map(function(s){return String(s).toUpperCase();}).join(", "))+"]");});}
+    return L.join("\n");
+  }
+
+  // ---- add destination (secret-safe) ----
+  var addform=$("#addform");
+  function syncKind(){var em=$("#nf-kind").value==="email";$("#nf-f-email").hidden=!em;$("#nf-f-url").hidden=em;}
+  $("#nf-kind").addEventListener("change",syncKind);
+  $("#addroute").addEventListener("click",function(){addform.hidden=!addform.hidden;if(!addform.hidden){syncKind();$("#nf-name").focus();}});
+  $("#nf-cancel").addEventListener("click",function(){addform.hidden=true;});
+  $("#nf-save").addEventListener("click",function(){
+    var kind=$("#nf-kind").value,nm=$("#nf-name").value.trim();
+    cfg.notify=cfg.notify||{};cfg.notify.routes=cfg.notify.routes||[];
+    var n=cfg.notify.routes.length+1;
+    if(kind==="email"){
+      var ref="AGENTWIT_SMTP_PASS_"+n,pass=$("#nf-smtppass").value;
+      putSecret(ref,pass,function(){
+        cfg.notify.routes.push({kind:"email",name:nm||"Email alert",smtp_host:$("#nf-smtp").value.trim(),
+          smtp_port:parseInt($("#nf-smtpport").value,10)||587,mail_to:[$("#nf-to").value.trim()].filter(Boolean),
+          password_ref:"${env:"+ref+"}",on:["CRITICAL"]});
+        $("#nf-smtppass").value="";finishAdd("Email destination added · password written to secrets.env");});
+    }else{
+      var refw="AGENTWIT_"+kind.toUpperCase()+"_WEBHOOK_"+n;
+      putSecret(refw,$("#nf-url").value,function(){
+        cfg.notify.routes.push({kind:kind,name:nm||(kind+" alert"),url:"${env:"+refw+"}",on:["HIGH","CRITICAL"]});
+        $("#nf-url").value="";finishAdd("Destination added · secret written to secrets.env");});
+    }
+  });
+  function putSecret(name,value,ok){
+    if(!value){toast("Enter the secret value first");return;}
+    api("/api/secret",{method:"POST",headers:{"Content-Type":"application/json","X-Agentwit-Token":CSRF},
+      body:JSON.stringify({name:name,value:value})}).then(ok).catch(function(e){toast("Secret failed: "+e.message);});
+  }
+  function finishAdd(msg){$("#nf-name").value="";addform.hidden=true;paintRoutes();render();toast(msg);}
+
+  // ---- save config ----
+  $("#savebtn").addEventListener("click",function(){
+    collect();
+    api("/api/config",{method:"POST",headers:{"Content-Type":"application/json","X-Agentwit-Token":CSRF},
+      body:JSON.stringify(cfg)}).then(function(j){
+        toast("Saved"+(j.warnings&&j.warnings.length?" (with warnings)":"")+" · reload daemon (SIGHUP) to apply");
+      }).catch(function(e){toast("Save rejected: "+e.message);});
+  });
+
+  // ---- tabs / theme / copy ----
+  var tabs=document.querySelectorAll('nav button');
+  tabs.forEach(function(b){b.addEventListener("click",function(){
+    tabs.forEach(function(x){x.setAttribute("aria-selected","false");});b.setAttribute("aria-selected","true");
+    ["monitor","notify","activity","proxy","system"].forEach(function(s){$("#sec-"+s).hidden=(s!==b.dataset.sec);});});});
+  $("#theme").addEventListener("click",function(){
+    var c=document.documentElement.getAttribute("data-theme");
+    var n=c==="dark"?"light":(c==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark"));
+    document.documentElement.setAttribute("data-theme",n);});
+  $("#copy").addEventListener("click",function(){
+    var t=$("#yaml").textContent;
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){toast("Copied");},sel);else sel();
+    function sel(){var r=document.createRange();r.selectNodeContents($("#yaml"));var s=getSelection();s.removeAllRanges();s.addRange(r);toast("Selected — press Copy");}});
+})();
+</script>
+</body>
+</html>

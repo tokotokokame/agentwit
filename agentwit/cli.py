@@ -666,5 +666,42 @@ def daemon(
         click.echo("agentwit daemon stopped.")
 
 
+# ---------------------------------------------------------------------------
+# ui
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--port", default=8799, show_default=True, help="Port for the local console")
+@click.option("--no-browser", is_flag=True, default=False, help="Don't open a browser")
+def ui(port: int, no_browser: bool) -> None:
+    """Open the local settings console (loopback only).
+
+    Serves a small page on 127.0.0.1 for viewing and changing config, adding
+    notification destinations, and reviewing recent detections. It binds
+    loopback only; reach it from another machine over an SSH tunnel
+    (``ssh -L <port>:127.0.0.1:<port> your-server``), never by exposing it.
+    """
+    import webbrowser
+
+    from .ui.server import serve
+
+    httpd, _token = serve(host="127.0.0.1", port=port)
+    url = f"http://127.0.0.1:{port}/"
+    click.echo(f"agentwit console → {url}")
+    click.echo("Loopback only. Press Ctrl+C to stop.")
+    if not no_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+        click.echo("console stopped.")
+
+
 if __name__ == "__main__":  # python -m agentwit.cli
     main()
