@@ -543,3 +543,128 @@ def config_validate() -> None:
     if errors:
         sys.exit(1)
     click.echo(click.style("config.yaml is valid", fg="green", bold=True))
+
+
+# ---------------------------------------------------------------------------
+# daemon
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--target", default=None, help="Upstream MCP URL (overrides config)")
+@click.option("--host", default=None, help="Bind host (overrides config proxy.host)")
+@click.option("--port", default=None, type=int, help="Bind port (overrides config)")
+@click.option("--log-dir", default=None, help="Witness log dir (default ~/.agentwit/witness_logs)")
+@click.option("--actor", default="daemon", show_default=True, help="Actor identifier")
+@click.option("--webhook", default=None, help="Single webhook URL (hub routes in config also fire)")
+@click.option("--webhook-on", default="HIGH,CRITICAL", show_default=True)
+@click.option("--pidfile", default=None, help="Write the PID here while running")
+def daemon(
+    target: str | None,
+    host: str | None,
+    port: int | None,
+    log_dir: str | None,
+    actor: str,
+    webhook: str | None,
+    webhook_on: str,
+    pidfile: str | None,
+) -> None:
+    """Run agentwit as a long-lived service (single process, SIGHUP reload).
+
+    Settings come from ~/.agentwit/config.yaml; CLI flags override. Edit the
+    config and send SIGHUP (``systemctl --user reload`` or ``kill -HUP``) to
+    apply monitor/notify changes without dropping the listening socket.
+    """
+    import asyncio
+    import os
+    import signal
+
+    import uvicorn
+
+    from .witness.log import WitnessLogger
+    from .config import load_config, config_home
+
+    cfg = load_config()
+    proxy_cfg = cfg.get("proxy", {})
+    target = target or proxy_cfg.get("target")
+    if not target:
+        click.echo("Error: no target (set proxy.target or pass --target)", err=True)
+        sys.exit(1)
+    host = host or proxy_cfg.get("host", "127.0.0.1")
+    port = port or int(proxy_cfg.get("port", 8765))
+    timeout = float(proxy_cfg.get("timeout", 30.0))
+    log_dir = log_dir or str(config_home() / "witness_logs")
+
+    if host in ("0.0.0.0", "::"):
+        click.echo(click.style(
+            f"warning: binding {host} exposes the proxy off-box; "
+            "127.0.0.1 is safer", fg="yellow"), err=True)
+
+    witness = WitnessLogger(session_dir=log_dir, actor=actor)
+
+    from .proxy.http_proxy import create_proxy_app
+    app = create_proxy_app(
+        target_url=target, witness_logger=witness, actor=actor,
+        webhook_url=webhook, webhook_on=webhook_on, timeout=timeout, config=cfg,
+    )
+
+    uconfig = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server = uvicorn.Server(uconfig)
+    # We own the signals (see _serve) so cleanup is deterministic; stop uvicorn
+    # from installing — and later restoring — its own SIGTERM/SIGINT handlers.
+    server.install_signal_handlers = lambda: None
+
+    click.echo(f"agentwit daemon → {target}  (listening {host}:{port})")
+    click.echo(f"witness logs → {log_dir}")
+    click.echo("SIGHUP reloads config; SIGTERM/SIGINT stops gracefully.")
+
+    if pidfile:
+        try:
+            Path(pidfile).write_text(str(os.getpid()), encoding="utf-8")
+        except OSError as exc:
+            click.echo(f"warning: could not write pidfile: {exc}", err=True)
+
+    async def _serve() -> None:
+        loop = asyncio.get_running_loop()
+
+        def _reload() -> None:
+            try:
+                app.state.monitor.reload(load_config())
+                click.echo(f"[agentwit] SIGHUP: reloaded {app.state.monitor.summary()}")
+            except Exception as exc:
+                click.echo(f"[agentwit] SIGHUP reload failed, keeping current "
+                           f"config: {exc}", err=True)
+
+        def _stop() -> None:
+            # graceful: tell uvicorn to finish, then serve() returns and the
+            # outer finally runs (pidfile removal, witness close).
+            server.should_exit = True
+
+        for _sig in ("SIGINT", "SIGTERM"):
+            if hasattr(signal, _sig):
+                try:
+                    loop.add_signal_handler(getattr(signal, _sig), _stop)
+                except (NotImplementedError, RuntimeError):
+                    pass
+        if hasattr(signal, "SIGHUP"):
+            try:
+                loop.add_signal_handler(signal.SIGHUP, _reload)
+            except (NotImplementedError, RuntimeError):
+                pass  # not supported on this platform
+        await server.serve()
+
+    try:
+        asyncio.run(_serve())
+    except KeyboardInterrupt:  # SIGINT — exit quietly, not with a traceback
+        pass
+    finally:
+        witness.close()
+        if pidfile:
+            try:
+                Path(pidfile).unlink()
+            except OSError:
+                pass
+        click.echo("agentwit daemon stopped.")
+
+
+if __name__ == "__main__":  # python -m agentwit.cli
+    main()

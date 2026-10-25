@@ -1,0 +1,41 @@
+[Unit]
+# agentwit witness daemon — user service.
+# Install: see packaging/README.md
+Description=agentwit transparent witness proxy
+Documentation=https://github.com/tokotokokame/agentwit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Reads ~/.agentwit/config.yaml; override target/port with flags if you wish.
+ExecStart=%h/.local/bin/agentwit daemon
+# `systemctl --user reload agentwit` re-reads config without dropping the socket.
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=3
+
+# --- Resource limits: stay friendly on a 4–8 GB laptop running other apps ---
+MemoryMax=192M
+MemoryHigh=128M
+CPUQuota=50%
+TasksMax=32
+
+# --- Hardening: the monitor must not become the weak point ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+# config.yaml + witness logs live here and must stay writable:
+ReadWritePaths=%h/.agentwit
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+# agentwit only needs loopback + outbound webhook/SMTP; no raw sockets:
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=default.target

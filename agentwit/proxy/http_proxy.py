@@ -21,7 +21,6 @@ from ..security.bypass_detector import BypassDetector
 from ..monitor.backup import SessionBackup
 from ..witness.log import WitnessLogger
 from ..plugins import load_plugins
-from ..analyzer.scorer import RiskScorer
 from ..config.redact import redact_payload
 
 logger = logging.getLogger(__name__)
@@ -56,11 +55,11 @@ def create_proxy_app(
     target = target_url.rstrip("/")
     bypass_detector = BypassDetector()
 
-    # Config-driven monitoring (工程2): built-in scorer + redaction + notify.
-    _scorer = RiskScorer.from_config(config)
-    _redact = (config or {}).get("monitor", {}).get("redact", {}) or {}
-    _redact_on = bool(_redact.get("enabled", False))
-    _redact_keys = _redact.get("keys", []) or []
+    # Config-driven monitoring (工程2/4): scorer + redaction + notify hub,
+    # bundled in a hot-reloadable state so a daemon can swap it on SIGHUP.
+    from ..monitor.state import MonitorState
+    _state = MonitorState(config)
+    app.state.monitor = _state  # daemon reloads via app.state.monitor.reload()
 
     _notifier = None
     if webhook_url:
@@ -68,9 +67,6 @@ def create_proxy_app(
         _levels = parse_severity_list(webhook_on) or ["high"]
         _min_sev = min(_levels, key=lambda s: _SEV_ORDER.get(s, 2))
         _notifier = WebhookNotifier(url=webhook_url, min_severity=_min_sev)
-
-    from ..notifier.hub import NotificationHub
-    _hub = NotificationHub.from_config(config)
 
     # Shared async HTTP client (created at startup, closed at shutdown).
     client: httpx.AsyncClient
@@ -168,14 +164,15 @@ def create_proxy_app(
             _plugin_alerts: list[dict],
         ) -> dict:
             """Score on the raw payload, store a redacted copy, notify on risk."""
-            _indicators = _scorer.score_event(
+            _st = _state
+            _indicators = _st.scorer.score_event(
                 {"action": _action, "tool": _tool, "full_payload": _raw_payload}
             )
             if _plugin_alerts:
                 _indicators = _indicators + _plugin_alerts
             _stored = (
-                redact_payload(_raw_payload, _redact_keys)
-                if _redact_on else _raw_payload
+                redact_payload(_raw_payload, _st.redact_keys)
+                if _st.redact_on else _raw_payload
             )
             _event = await witness_logger.alog_event(
                 action=_action, tool=_tool,
@@ -185,8 +182,8 @@ def create_proxy_app(
             if _indicators:
                 if _notifier:
                     await _notifier.notify_if_threshold(_event, _indicators)
-                if _hub.active:
-                    await _hub.notify(_event, _indicators)
+                if _st.hub.active:
+                    await _st.hub.notify(_event, _indicators)
             return _event
 
         # Retry with exponential backoff: 1s → 2s → 4s (max 3 attempts)
@@ -224,7 +221,8 @@ def create_proxy_app(
                 }) + "\n")
             error_payload = {
                 "error": str(_conn_exc),
-                "params": redact_payload(json_body, _redact_keys) if _redact_on else json_body,
+                "params": redact_payload(json_body, _state.redact_keys)
+                if _state.redact_on else json_body,
             }
             event = await witness_logger.alog_event(
                 action=action,

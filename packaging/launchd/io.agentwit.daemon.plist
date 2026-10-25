@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- agentwit witness daemon — macOS per-user LaunchAgent.
+     Install: see packaging/README.md
+     Reload config: launchctl kill -HUP gui/$(id -u)/io.agentwit.daemon -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.agentwit.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/agentwit</string>
+        <string>daemon</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Logs: inspect with `log show` or tail these files -->
+    <key>StandardOutPath</key>
+    <string>/tmp/agentwit.daemon.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/agentwit.daemon.err.log</string>
+</dict>
+</plist>
