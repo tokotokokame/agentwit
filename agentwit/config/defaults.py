@@ -31,6 +31,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "enabled": True,      # keep secrets out of the tamper-evident log
             "keys": ["password", "token", "api_key", "apikey",
                      "secret", "authorization", "bearer", "private_key"],
+            "scan_values": True,  # also mask high-confidence secrets inside values
         },
     },
     "notify": {

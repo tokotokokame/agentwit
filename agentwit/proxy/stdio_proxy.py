@@ -53,6 +53,7 @@ class StdioProxy:
         _redact = (config or {}).get("monitor", {}).get("redact", {}) or {}
         self._redact_on = bool(_redact.get("enabled", False))
         self._redact_keys = _redact.get("keys", []) or []
+        self._redact_scan = bool(_redact.get("scan_values", False))
 
     async def run(self, max_restarts: int = 3, restart_delay: float = 1.0) -> int:
         """Start subprocess and proxy stdin/stdout, restarting on crash.
@@ -195,7 +196,7 @@ class StdioProxy:
 
         if self._redact_on:
             from agentwit.config.redact import redact_payload
-            stored = redact_payload(payload, self._redact_keys)
+            stored = redact_payload(payload, self._redact_keys, scan_values=self._redact_scan)
         else:
             stored = payload
 

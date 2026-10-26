@@ -26,6 +26,7 @@ class MonitorState:
         redact = (config or {}).get("monitor", {}).get("redact", {}) or {}
         self.redact_on: bool = bool(redact.get("enabled", False))
         self.redact_keys: list[str] = redact.get("keys", []) or []
+        self.redact_scan: bool = bool(redact.get("scan_values", False))
 
     def reload(self, config: dict | None) -> None:
         """Rebuild from *config*. Raises if the config is unusable — the
@@ -38,6 +39,7 @@ class MonitorState:
         self.hub = hub
         self.redact_on = bool(redact.get("enabled", False))
         self.redact_keys = redact.get("keys", []) or []
+        self.redact_scan = bool(redact.get("scan_values", False))
 
     def summary(self) -> dict[str, Any]:
         """Small dict for logging what the active state looks like."""

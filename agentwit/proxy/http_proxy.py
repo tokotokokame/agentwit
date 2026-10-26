@@ -171,7 +171,7 @@ def create_proxy_app(
             if _plugin_alerts:
                 _indicators = _indicators + _plugin_alerts
             _stored = (
-                redact_payload(_raw_payload, _st.redact_keys)
+                redact_payload(_raw_payload, _st.redact_keys, scan_values=_st.redact_scan)
                 if _st.redact_on else _raw_payload
             )
             _event = await witness_logger.alog_event(
@@ -221,7 +221,7 @@ def create_proxy_app(
                 }) + "\n")
             error_payload = {
                 "error": str(_conn_exc),
-                "params": redact_payload(json_body, _state.redact_keys)
+                "params": redact_payload(json_body, _state.redact_keys, scan_values=_state.redact_scan)
                 if _state.redact_on else json_body,
             }
             event = await witness_logger.alog_event(
