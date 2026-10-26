@@ -136,9 +136,13 @@ def make_handler(home: Path, csrf_token: str):
         def do_POST(self):
             if not self._host_ok():
                 return self._send(403, {"error": "bad host"})
-            if self.headers.get("X-Agentwit-Token") != csrf_token:
+            sent = self.headers.get("X-Agentwit-Token") or ""
+            if not _secrets.compare_digest(sent, csrf_token):  # constant-time
                 return self._send(403, {"error": "bad or missing CSRF token"})
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return self._send(400, {"error": "bad content-length"})
             if length <= 0 or length > _MAX_BODY:
                 return self._send(413, {"error": "bad body size"})
             try:

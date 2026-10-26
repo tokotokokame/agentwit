@@ -42,7 +42,9 @@ def _safe_webhook_url(url: str | None) -> str | None:
         return None
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        logger.warning("agentwit notify: refusing non-https webhook %r", url)
+        # Do not log the URL itself — a webhook URL is a secret. Scheme only.
+        logger.warning("agentwit notify: refusing non-https webhook (scheme=%r)",
+                       parsed.scheme or "")
         return None
     host = (parsed.hostname or "").lower()
     if host not in ALLOWED_NOTIFY_HOSTS:
@@ -63,7 +65,8 @@ class _Route:
         try:
             await self._dispatch(event, indicators, severity)
         except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("agentwit notify: route %s failed: %s", self.name, exc)
+            # exception text may embed the destination URL (a secret); type only.
+            logger.warning("agentwit notify: route %s failed: %s", self.name, type(exc).__name__)
 
 
 class NotificationHub:

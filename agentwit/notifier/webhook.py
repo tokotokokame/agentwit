@@ -163,7 +163,9 @@ class WebhookNotifier:
         try:
             await self._send(event, severity, pattern, all_indicators)
         except Exception as exc:
-            logger.warning("agentwit webhook notification failed: %s", exc)
+            # Never log the exception text or URL: a webhook URL is itself the
+            # secret (e.g. Slack). Log only the exception type.
+            logger.warning("agentwit webhook notification failed: %s", type(exc).__name__)
 
     async def _send(
         self,
