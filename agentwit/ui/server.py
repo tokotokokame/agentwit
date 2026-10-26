@@ -120,9 +120,11 @@ def make_handler(home: Path, csrf_token: str):
             if not self._host_ok():
                 return self._send(403, {"error": "bad host"})
             if self.path in ("/", "/index.html"):
+                # The token is NOT embedded in the page. It travels in the URL
+                # fragment (printed in the terminal) and the page reads it from
+                # location.hash — a blind GET / by another local process never
+                # sees it. The fragment is never sent to the server.
                 html = (_STATIC / "index.html").read_bytes()
-                # inject the CSRF token for the page's fetch() calls
-                html = html.replace(b"__CSRF__", csrf_token.encode())
                 return self._send(200, html, "text/html; charset=utf-8")
             if self.path == "/api/config":
                 return self._send(200, load_config(home, resolve_secrets=False))

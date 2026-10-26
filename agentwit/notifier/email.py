@@ -56,9 +56,10 @@ class EmailSender:
             logger.warning("agentwit email notification failed: %s", exc)
 
     def _build(self, event: dict, indicators: list[dict], severity: str) -> EmailMessage:
-        tool = event.get("tool") or "unknown"
-        session = event.get("session_id", "unknown")
-        patterns = ", ".join(sorted({i.get("pattern", "") for i in indicators}))
+        from .sanitize import clean_field
+        tool = clean_field(event.get("tool") or "unknown")
+        session = clean_field(event.get("session_id") or "unknown")
+        patterns = clean_field(", ".join(sorted({i.get("pattern", "") for i in indicators})))
         msg = EmailMessage()
         msg["Subject"] = f"[agentwit {severity.upper()}] {patterns or 'alert'} on {tool}"
         msg["From"] = self.mail_from
@@ -77,7 +78,24 @@ class EmailSender:
         if not self.mail_to:
             logger.warning("agentwit email: no recipients configured; skipping")
             return
-        msg = self._build(event, indicators, severity)
+        self._deliver(self._build(event, indicators, severity))
+
+    async def send_text(self, subject: str, body: str) -> None:
+        """Send a plain text email (e.g. a summary). Never raises."""
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = self.mail_from
+        msg["To"] = ", ".join(self.mail_to)
+        msg.set_content(body)
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(None, self._deliver, msg)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("agentwit email summary failed: %s", type(exc).__name__)
+
+    def _deliver(self, msg: EmailMessage) -> None:
+        if not self.mail_to:
+            return
         with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as server:
             if self.use_tls:
                 server.starttls(context=ssl.create_default_context())

@@ -51,9 +51,18 @@ def test_from_config_drops_unsafe_webhook():
     cfg = {"notify": {"routes": [
         {"name": "s", "kind": "slack", "url": "https://hooks.slack.com/x", "on": ["CRITICAL"]},
         {"name": "bad", "kind": "webhook", "url": "https://evil.com/x", "on": ["HIGH"]},
-        {"name": "m", "kind": "email", "smtp_host": "smtp.x", "mail_to": ["a@b.c"], "on": ["CRITICAL"]},
     ]}}
-    assert [r.name for r in NotificationHub.from_config(cfg)._routes] == ["s", "m"]
+    assert [r.name for r in NotificationHub.from_config(cfg)._routes] == ["s"]
+
+
+def test_from_config_keeps_email_with_resolvable_public_host(monkeypatch):
+    import agentwit.notifier.hub as hub
+    monkeypatch.setattr(hub, "_safe_smtp_host", lambda h: True)
+    cfg = {"notify": {"routes": [
+        {"name": "m", "kind": "email", "smtp_host": "smtp.example.com",
+         "mail_to": ["a@b.c"], "on": ["CRITICAL"]},
+    ]}}
+    assert [r.name for r in NotificationHub.from_config(cfg)._routes] == ["m"]
 
 
 def test_empty_hub_is_inactive():

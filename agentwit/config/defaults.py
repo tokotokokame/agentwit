@@ -37,6 +37,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "notify": {
         "routes": [],             # e.g. {name, kind, secret_ref, on:[...]} (工程3)
         "rate_limit": {"max_per_min": 10},
+        "summary_on_exit": False,  # push a session summary when the daemon stops
     },
 }
 

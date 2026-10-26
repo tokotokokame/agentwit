@@ -55,10 +55,12 @@ def test_get_endpoints(server):
     assert _req(base, "/api/detections")[0] == 200
 
 
-def test_token_injected_into_page(server):
+def test_token_not_embedded_in_page(server):
+    """L3: the page must NOT carry the token — it travels in the URL fragment."""
     base, token, _ = server
     html = _req(base, "/")[1].decode()
-    assert "__CSRF__" not in html and token in html
+    assert token not in html
+    assert "location.hash" in html  # page reads the token client-side
 
 
 def test_bad_host_rejected(server):

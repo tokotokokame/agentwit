@@ -208,8 +208,16 @@
 <script>
 (function(){
   "use strict";
-  var CSRF="__CSRF__";
+  // Token arrives in the URL fragment (printed in the terminal), never from
+  // the server. Keep it in memory; strip it from the address bar immediately.
+  var CSRF=(location.hash||"").replace(/^#/,"");
+  if(CSRF){ try{ history.replaceState(null,"",location.pathname+location.search); }catch(e){} }
   var $=function(s,r){return (r||document).querySelector(s)};
+  if(!CSRF){
+    document.addEventListener("DOMContentLoaded",function(){
+      var y=$("#yaml"); if(y) y.textContent="Open the URL printed in the terminal (it carries a one-time access token after #). Reading works, but saving is disabled without it.";
+    });
+  }
   var SEVMAP={shell_exec:"high",privilege_escalation:"critical",credential_access:"high",
     data_exfil:"medium",persistence:"high",lateral_movement:"high"};
   var DESC={shell_exec:"Running commands / shells",privilege_escalation:"sudo, setuid, chown root",

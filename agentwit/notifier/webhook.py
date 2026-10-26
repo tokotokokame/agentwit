@@ -118,10 +118,12 @@ class WebhookNotifier:
         pattern: str,
         all_indicators: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        session_id = event.get("session_id", "unknown")
-        tool = event.get("tool", "") or "unknown"
-        timestamp = event.get("timestamp", "")
-        actor = event.get("actor", "unknown")
+        from .sanitize import clean_field
+        session_id = clean_field(event.get("session_id") or "unknown")
+        tool = clean_field(event.get("tool") or "unknown")
+        timestamp = clean_field(event.get("timestamp") or "")
+        actor = clean_field(event.get("actor") or "unknown")
+        pattern = clean_field(pattern)
 
         sev_upper = severity.upper()
         emoji = {"CRITICAL": "🚨", "HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(sev_upper, "⚠️")
@@ -184,6 +186,10 @@ class WebhookNotifier:
             return
 
         payload = self._build_payload(event, severity, pattern, all_indicators)
+        await self._post(payload)
+
+    async def _post(self, payload: dict) -> None:
+        import httpx
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 self.url,
@@ -191,6 +197,14 @@ class WebhookNotifier:
                 headers={"Content-Type": "application/json"},
             )
             resp.raise_for_status()
+
+    async def send_message(self, text: str) -> None:
+        """Post a plain text message (e.g. a summary). Never raises."""
+        payload = {"content": text} if self._is_discord() else {"text": text}
+        try:
+            await self._post(payload)
+        except Exception as exc:
+            logger.warning("agentwit webhook summary failed: %s", type(exc).__name__)
 
     @staticmethod
     def _worst(indicators: list[dict[str, Any]]) -> tuple[str, str]:

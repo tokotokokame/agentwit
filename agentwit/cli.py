@@ -663,6 +663,17 @@ def daemon(
                 Path(pidfile).unlink()
             except OSError:
                 pass
+        if (cfg.get("notify", {}) or {}).get("summary_on_exit"):
+            try:
+                from .monitor.summary import build_summary, format_summary
+                from .notifier.hub import NotificationHub
+                from .config import config_home
+                _hub = NotificationHub.from_config(cfg)
+                if _hub.active:
+                    _text = format_summary(build_summary(config_home()))
+                    asyncio.run(_hub.notify_summary("agentwit session ended", _text))
+            except Exception:
+                pass
         click.echo("agentwit daemon stopped.")
 
 
@@ -685,10 +696,12 @@ def ui(port: int, no_browser: bool) -> None:
 
     from .ui.server import serve
 
-    httpd, _token = serve(host="127.0.0.1", port=port)
-    url = f"http://127.0.0.1:{port}/"
+    httpd, token = serve(host="127.0.0.1", port=port)
+    # The token rides in the URL fragment (never sent to the server). A local
+    # process that only does a blind GET / cannot read it.
+    url = f"http://127.0.0.1:{port}/#{token}"
     click.echo(f"agentwit console → {url}")
-    click.echo("Loopback only. Press Ctrl+C to stop.")
+    click.echo("Loopback only. Open the URL above (it carries a one-time token). Ctrl+C to stop.")
     if not no_browser:
         try:
             webbrowser.open(url)
@@ -701,6 +714,39 @@ def ui(port: int, no_browser: bool) -> None:
     finally:
         httpd.server_close()
         click.echo("console stopped.")
+
+
+# ---------------------------------------------------------------------------
+# summary
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--session", default=None, help="Session dir (default: newest)")
+@click.option("--push", is_flag=True, default=False, help="Send to configured notification routes")
+def summary(session: str | None, push: bool) -> None:
+    """Summarise a witness session; with --push send it to Slack/Discord/email.
+
+    Lets a phone see what happened without opening the console.
+    """
+    from .config import config_home, load_config
+    from .monitor.summary import build_summary, format_summary
+
+    home = config_home()
+    s = build_summary(home, session)
+    text = format_summary(s)
+    click.echo(text)
+    if not push:
+        return
+
+    import asyncio
+    from .notifier.hub import NotificationHub
+
+    hub = NotificationHub.from_config(load_config())
+    if not hub.active:
+        click.echo("No notification routes configured; nothing pushed.", err=True)
+        return
+    asyncio.run(hub.notify_summary("agentwit summary", text))
+    click.echo("Summary pushed.")
 
 
 if __name__ == "__main__":  # python -m agentwit.cli

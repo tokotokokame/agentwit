@@ -53,11 +53,41 @@ def _safe_webhook_url(url: str | None) -> str | None:
     return url
 
 
+def _safe_smtp_host(host: str) -> bool:
+    """Reject SMTP hosts that resolve to loopback, link-local (incl. cloud
+    metadata 169.254.169.254), unspecified or multicast addresses — none are
+    a real mail relay and all are SSRF-interesting. Private RFC1918 ranges
+    are allowed, since internal mail relays are legitimate.
+    """
+    import ipaddress
+    import socket
+
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        logger.warning("agentwit notify: smtp host does not resolve; refusing")
+        return False
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr.split("%")[0])
+        except ValueError:
+            return False
+        if (ip.is_loopback or ip.is_link_local or ip.is_unspecified
+                or ip.is_multicast or ip.is_reserved):
+            logger.warning("agentwit notify: refusing smtp host in a blocked range")
+            return False
+    return True
+
+
 class _Route:
-    def __init__(self, name: str, on: set[str], dispatch: Dispatch) -> None:
+    def __init__(self, name: str, on: set[str], dispatch: Dispatch, text_sender=None) -> None:
         self.name = name
         self.on = on
         self._dispatch = dispatch
+        self._text_sender = text_sender
 
     async def maybe_send(self, event: dict, indicators: list, severity: str) -> None:
         if severity not in self.on:
@@ -67,6 +97,14 @@ class _Route:
         except Exception as exc:  # pragma: no cover - defensive
             # exception text may embed the destination URL (a secret); type only.
             logger.warning("agentwit notify: route %s failed: %s", self.name, type(exc).__name__)
+
+    async def send_text(self, subject: str, text: str) -> None:
+        if self._text_sender is None:
+            return
+        try:
+            await self._text_sender(subject, text)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("agentwit notify: summary to %s failed: %s", self.name, type(exc).__name__)
 
 
 class NotificationHub:
@@ -99,14 +137,16 @@ class NotificationHub:
             if not on:
                 on = {"high", "critical"}
 
-            dispatch = cls._build_dispatch(kind, raw, _resolve, name)
-            if dispatch is not None:
-                routes.append(_Route(name, on, dispatch))
+            built = cls._build_dispatch(kind, raw, _resolve, name)
+            if built is not None:
+                dispatch, text_sender = built
+                routes.append(_Route(name, on, dispatch, text_sender))
 
         return cls(routes, max_per_min=int(rate))
 
     @staticmethod
-    def _build_dispatch(kind, raw, resolve, name) -> Dispatch | None:
+    def _build_dispatch(kind, raw, resolve, name):
+        """Return (dispatch, text_sender) or None."""
         if kind in ("slack", "discord", "webhook"):
             url = _safe_webhook_url(resolve(raw.get("url") or raw.get("secret_ref")))
             if not url:
@@ -118,13 +158,20 @@ class NotificationHub:
             async def _dispatch(event, indicators, severity):
                 await notifier.notify_if_threshold(event, indicators)
 
-            return _dispatch
+            async def _text(subject, text):
+                await notifier.send_message((subject + "\n" + text) if subject else text)
+
+            return _dispatch, _text
 
         if kind == "email":
             from .email import EmailSender
 
+            smtp_host = resolve(raw.get("smtp_host", "")) or ""
+            if not _safe_smtp_host(smtp_host):
+                logger.warning("agentwit notify: email route %s has an unusable smtp_host", name)
+                return None
             sender = EmailSender(
-                host=resolve(raw.get("smtp_host", "")),
+                host=smtp_host,
                 port=raw.get("smtp_port", 587),
                 use_tls=raw.get("smtp_tls", True),
                 username=resolve(raw.get("smtp_user")) if raw.get("smtp_user") else None,
@@ -139,7 +186,10 @@ class NotificationHub:
             async def _dispatch(event, indicators, severity):
                 await sender.send(event, indicators, severity)
 
-            return _dispatch
+            async def _text(subject, text):
+                await sender.send_text(subject or "agentwit summary", text)
+
+            return _dispatch, _text
 
         logger.warning("agentwit notify: unknown route kind %r", kind)
         return None
@@ -172,3 +222,8 @@ class NotificationHub:
             return
         for route in self._routes:
             await route.maybe_send(event, indicators, severity)
+
+    async def notify_summary(self, subject: str, text: str) -> None:
+        """Send a plain-text summary to every route (not severity-gated)."""
+        for route in self._routes:
+            await route.send_text(subject, text)
