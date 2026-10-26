@@ -83,6 +83,43 @@ def test_validate_warns_on_wildcard_bind(home):
     assert warnings and "interfaces" in warnings[0]
 
 
+def test_validate_catches_yaml_bool_on_key(home):
+    # `on: [HIGH, CRITICAL]` written unquoted in YAML parses to a boolean
+    # True key, not the string "on" — severity routing would then silently
+    # never fire. This must be a hard validation error, not a passed check.
+    errors, _ = C.validate_config(
+        {"notify": {"routes": [
+            {"kind": "discord", "url": "https://discord.com/x", True: ["HIGH"]}
+        ]}}
+    )
+    joined = " ".join(errors)
+    assert "boolean" in joined and '"on"' in joined
+
+
+def test_validate_catches_yaml_bool_off_key(home):
+    errors, _ = C.validate_config(
+        {"notify": {"routes": [
+            {"kind": "discord", "url": "https://discord.com/x", False: ["LOW"]}
+        ]}}
+    )
+    joined = " ".join(errors)
+    assert "boolean" in joined and '"off"' in joined
+
+
+def test_cli_set_rejects_unquoted_on_key(home):
+    # Reproduces the exact footgun: `on:` typed unquoted on the command
+    # line. yaml.safe_load coerces the key to True, and `config set` must
+    # now reject it instead of silently saving a dead route.
+    runner = CliRunner()
+    runner.invoke(main, ["init"])
+    result = runner.invoke(main, [
+        "config", "set", "notify.routes",
+        '[{kind: discord, url: "https://discord.com/x", on: [HIGH, CRITICAL]}]',
+    ])
+    assert result.exit_code != 0
+    assert "boolean" in result.output
+
+
 # --- redaction -------------------------------------------------------------
 
 def test_redact_is_recursive_and_pure(home):

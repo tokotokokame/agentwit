@@ -143,6 +143,21 @@ def validate_config(cfg: Any) -> tuple[list[str], list[str]]:
                 errors.append(f"notify.routes[{i}]: email route needs 'smtp_host'")
             if not route.get("mail_to"):
                 errors.append(f"notify.routes[{i}]: email route needs 'mail_to'")
+
+        # YAML 1.1 reads a bare `on`/`off`/`yes`/`no` as a boolean. Written
+        # unquoted (`on: [HIGH, CRITICAL]`), the key silently becomes the
+        # boolean True instead of the string "on" — the route then parses
+        # and *validates* fine, but severity routing goes dark forever
+        # because nothing ever reads a `True` key. Catch it loudly instead
+        # of letting it fail silently.
+        for bad_key in (True, False):
+            if bad_key in route:
+                want = "on" if bad_key else "off"
+                errors.append(
+                    f"notify.routes[{i}]: key `{bad_key}` is a boolean, not "
+                    f"the string {want!r} — YAML read your unquoted `{want}:` "
+                    f"as a bool. Quote it: \"{want}\": [HIGH, CRITICAL]"
+                )
         for sev in route.get("on", []) or []:
             if str(sev).upper() not in SEVERITIES:
                 errors.append(f"notify.routes[{i}].on: bad severity {sev!r}")

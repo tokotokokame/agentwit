@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `notify.routes`: an unquoted `on:`/`off:` key is read by YAML as the
+  boolean `True`/`False`, not the string `"on"`/`"off"`. This previously
+  parsed, saved, and passed `config validate` — while silently disabling
+  severity routing forever (discovered live during a real deployment: the
+  route validated, test pushes worked, but real HIGH/CRITICAL alerts never
+  fired). `validate_config` now rejects it with a message pointing at the
+  fix. README and README.ja updated with the quoting requirement.
+
 ---
 
 ## [1.2.0] - 2026-10-26

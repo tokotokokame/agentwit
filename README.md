@@ -133,6 +133,10 @@ SSH (`ssh -L 8765:127.0.0.1:8765 your-server`).
   blocked ranges for SMTP). Untrusted fields are sanitized before sending.
 - `agentwit summary [--push]` and an optional daemon end-of-session push so a
   phone sees activity without opening the console.
+- Editing `notify.routes` by hand or via `config set`? Quote the severity
+  key: `"on": [HIGH, CRITICAL]`. Written bare (`on: [...]`), YAML reads it as
+  the boolean `True`, not the string `"on"` — `config validate`/`config set`
+  now reject that explicitly instead of saving a route that never fires.
 
 ### Log recording
 - Tamper-proof SHA-256 chain — detect any modification

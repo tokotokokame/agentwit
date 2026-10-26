@@ -37,6 +37,7 @@ agentwit ui                   # ローカル設定コンソール (127.0.0.1)
 
 - **常駐デーモン** — 単一プロセス。`SIGHUP`で設定ホットリロード、graceful停止。systemdユーザーユニット / macOS LaunchAgent を [`packaging/`](packaging/) に同梱。
 - **通知** — Slack / Discord / Webhook / メール(SMTP)。重大度別ルーティングとレート制限。アラートもサマリもスマホに届く。
+  `notify.routes`を手動編集する際は`"on": [HIGH, CRITICAL]`のように**必ずクォート**してください（クォートなしの`on:`はYAMLにbooleanの`True`と解釈され、通知が静かに発火しなくなります。`config validate`/`config set`はこの誤りを明示的に拒否するようになりました）。
 - **設定コンソール** — `agentwit ui`：ループバック限定で検出ルール切替・通知先管理・検出履歴確認。
 - **秘密はローカルのみ** — 認証情報は `~/.agentwit/secrets.env`（0600）だけ。設定・コンソール・ログに秘密は残さない。
 
