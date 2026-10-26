@@ -15,42 +15,44 @@ agentwit proxy --target http://localhost:3000 --port 8765
 
 Change one URL. No MCP server modification needed.
 
-![agentwit demo](docs/demo.gif)
-
 [日本語版](README.ja.md) · [PyPI](https://pypi.org/project/agentwit/) · [Releases](https://github.com/tokotokokame/agentwit/releases)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-v1.1.0-orange.svg)](https://pypi.org/project/agentwit/)
-[![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen.svg)](#)
+[![PyPI](https://img.shields.io/badge/PyPI-v1.2.0-orange.svg)](https://pypi.org/project/agentwit/)
+[![Tests](https://img.shields.io/badge/tests-373%20passing-brightgreen.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![OWASP LLM Top 10](https://img.shields.io/badge/OWASP%20LLM-Top%2010%20mapped-red.svg)](docs/api-reference.md#owaspmapper)
 [![Plugin API](https://img.shields.io/badge/plugin--api-stable-blueviolet.svg)](docs/plugin-guide.md)
 
 ---
 
+## 🆕 What's new in v1.2.0 — Run it as a service
 
-## 🆕 What's new in v1.1.0 — Desktop App
-
-`agentwit gui` — one command launches the MCP Inspector GUI.  
-On first run, it **automatically downloads and registers a desktop shortcut**.
+agentwit now runs resident instead of being watched in a GUI. Leave it in
+front of your MCP server and it keeps a tamper-evident record, alerts you
+where you already are, and is configured from one place.
 
 ```bash
 pip install --upgrade agentwit
-agentwit gui
+agentwit init                 # ~/.agentwit/config.yaml + secrets.env (0600)
+agentwit daemon               # single process, ~60–70 MB RSS, loopback only
+agentwit ui                   # local settings console (127.0.0.1)
 ```
 
-### Download
+- **Resident daemon** — one process, hot-reloads config on `SIGHUP`,
+  graceful stop. systemd user unit and macOS LaunchAgent under
+  [`packaging/`](packaging/), with memory/CPU caps and hardening.
+- **Notifications** — Slack, Discord, generic webhook and email/SMTP, with
+  per-route severity routing and a rate limit. Alerts reach your phone; so do
+  `agentwit summary` pushes.
+- **Settings console** — `agentwit ui`: a loopback-only page to toggle
+  detection rules, manage destinations, and review recent detections.
+- **Secrets stay local** — credentials live only in `~/.agentwit/secrets.env`
+  (0600). Config and the console show just `${env:NAME}` references, and
+  secrets are kept out of the witness log and the process logs.
 
-| OS | File | Link |
-|---|---|---|
-| Linux | AppImage (recommended) | [mcp-inspector_amd64.AppImage](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_amd64.AppImage) |
-| Linux | .deb | [mcp-inspector_amd64.deb](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_amd64.deb) |
-| Linux | .rpm | [mcp-inspector_amd64.rpm](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_amd64.rpm) |
-| macOS (Apple Silicon) | .dmg | [mcp-inspector_aarch64.dmg](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_aarch64.dmg) |
-| macOS (Intel) | .dmg | [mcp-inspector_x64.dmg](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_x64.dmg) |
-| Windows | .msi | [mcp-inspector_x64-setup.msi](https://github.com/tokotokokame/agentwit/releases/download/v1.1.0/mcp-inspector_x64-setup.msi) |
-
-→ [All releases](https://github.com/tokotokokame/agentwit/releases)
+The MCP Inspector desktop GUI is still available (`agentwit gui`); see
+[MCP Inspector GUI](#mcp-inspector-gui) below.
 
 ---
 ## The problem
@@ -80,32 +82,66 @@ MCP Server  (zero modification)
 ```bash
 pip install agentwit
 
-# 1. Start the proxy
-agentwit proxy --target http://localhost:3000 --port 8765
+# 1. Create config + secrets (nothing secret ships in the package)
+agentwit init
 
-# 2. Point your agent to port 8765 instead of 3000
-#    That's it. Recording starts immediately.
+# 2. Point it at your MCP server, then run it resident
+agentwit config set proxy.target http://localhost:3000
+agentwit daemon                    # or: agentwit proxy --target http://localhost:3000
 
-# 3. Generate an audit report
+# 3. Point your agent to port 8765 instead of 3000. Recording starts immediately.
+
+# 4. Audit report + integrity check
 agentwit report --session ./witness_logs/SESSION_ID --format html
-
-# 4. Verify log integrity
 agentwit verify --session ./witness_logs/SESSION_ID
-# Chain integrity:  VALID ✓
-# Signature check:  VALID ✓
+# Chain integrity:  VALID ✓   Signature check:  VALID ✓
 ```
 
-→ Full guide: [docs/quickstart.md](docs/quickstart.md)
+Run it next to the MCP server so all traffic stays on loopback — no extra
+port to open. To reach the console or proxy from another machine, tunnel over
+SSH (`ssh -L 8765:127.0.0.1:8765 your-server`).
+
+→ Full guide: [docs/quickstart.md](docs/quickstart.md) · service setup:
+[packaging/README.md](packaging/README.md)
 
 ---
 
 ## Features
+
+### Resident service *(v1.2.0)*
+- `agentwit daemon` — single process (one thread at idle, no children,
+  ~60–70 MB RSS). Edit config and `kill -HUP` (or `systemctl --user reload`)
+  to apply monitor/notify changes without dropping the socket.
+- systemd user unit and macOS LaunchAgent in [`packaging/`](packaging/) with
+  `MemoryMax`, `CPUQuota`, `ProtectSystem=strict`, loopback+outbound sockets.
+
+### Configuration & secrets *(v1.2.0)*
+- One place: `~/.agentwit/config.yaml` (0644, no secrets) + `secrets.env`
+  (0600). `agentwit init`, `agentwit config get|set|validate`.
+- Credentials are referenced as `${env:NAME}` and resolved from env or
+  `secrets.env`; nothing secret is written to config, the console, or logs.
+
+### Settings console *(v1.2.0)*
+- `agentwit ui` — loopback-only page: toggle rules, limit scored tools,
+  manage notification destinations (secret-safe), review recent detections,
+  live `config.yaml` preview. CSRF token delivered via URL fragment; the API
+  never returns secret values.
+
+### Notifications *(v1.2.0)*
+- Slack, Discord, generic webhook, email/SMTP. Per-route severity routing and
+  a per-minute rate limit. SSRF guards (https + host allow-list for webhooks;
+  blocked ranges for SMTP). Untrusted fields are sanitized before sending.
+- `agentwit summary [--push]` and an optional daemon end-of-session push so a
+  phone sees activity without opening the console.
 
 ### Log recording
 - Tamper-proof SHA-256 chain — detect any modification
 - ed25519 signatures — prove who recorded the log
 - HTML / Markdown / JSON report generation
 - Auto-backup to `~/.agentwit/backups/` on session end
+- Secret redaction before write: key-name based **and** value scanning for
+  high-confidence secrets (Bearer/Authorization, AWS/GitHub/OpenAI/Slack
+  tokens, JWT, webhook URLs, PEM keys)
 
 ### Risk detection
 - 15+ built-in patterns: `shell_exec`, `privilege_escalation`, `data_exfiltration`, `jailbreak`, ...
@@ -175,11 +211,17 @@ Supports: Splunk HEC · Elasticsearch · Grafana Loki
 
 ### MCP Inspector GUI
 
-Desktop app for real-time MCP server debugging.
+Optional desktop app for interactive, real-time MCP server debugging — handy
+at a workstation, separate from the resident daemon above. Launch with
+`agentwit gui`, or download a build:
 
-**Download:** [GitHub Releases](https://github.com/tokotokokame/agentwit/releases)
-- Linux: `.deb` / `.rpm` / `.AppImage`
-- Windows: `.msi` (via GitHub Actions)
+| OS | File |
+|---|---|
+| Linux | [.AppImage](https://github.com/tokotokokame/agentwit/releases) · `.deb` · `.rpm` |
+| macOS | `.dmg` (Apple Silicon / Intel) |
+| Windows | `.msi` |
+
+→ [All releases](https://github.com/tokotokokame/agentwit/releases)
 
 #### GUI features
 - 3-pane layout: Server info + Tool list / Parameter editor + Response / History + Metrics + Compare
@@ -232,13 +274,23 @@ callbacks = [AgentwitCallback(output="./audit.jsonl")]
 ## CLI reference
 
 ```bash
-# Proxy
+# Setup & config
+agentwit init
+agentwit config set proxy.target http://localhost:3000
+agentwit config get monitor
+agentwit config validate
+
+# Run resident (recommended) or one-shot proxy
+agentwit daemon
 agentwit proxy --target http://localhost:3000 --port 8765
-agentwit proxy --target http://localhost:3000 --port 8765 --timeout 60
 agentwit proxy --stdio -- python mcp_server.py
-agentwit proxy --target http://localhost:3000 \
-  --webhook https://hooks.slack.com/xxx \
-  --webhook-on HIGH,CRITICAL
+
+# Settings console (loopback only)
+agentwit ui
+
+# Session summary (view, or push to Slack/Discord/email)
+agentwit summary
+agentwit summary --push
 
 # Reports
 agentwit report --session ./witness_logs/SESSION_ID --format json
@@ -279,7 +331,9 @@ A blocked call leaves no trace. A witnessed call leaves evidence.
 | v0.5.0 | 2026-03-22 | ed25519 signatures, bypass detection, anomaly detection |
 | v0.6.0 | 2026-03-22 | GUI Export Report, agent thought recording, error handling |
 | v0.7.0 | 2026-03-22 | OWASP LLM Top 10 mapping, Windows build (GitHub Actions) |
-| **v1.0.0** | **2026-03-22** | **Plugin API, SIEM integration, full docs, GUI tests** |
+| v1.0.0 | 2026-03-22 | Plugin API, SIEM integration, full docs, GUI tests |
+| v1.1.0 | 2026-03 | MCP Inspector desktop app (`agentwit gui`) |
+| **v1.2.0** | **2026-10-26** | **Resident daemon, config+secrets layer, notification hub (Slack/Discord/email), settings console, value redaction, summary push, security review** |
 
 ---
 

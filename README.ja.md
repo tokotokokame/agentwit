@@ -15,14 +15,32 @@ agentwit proxy --target http://localhost:3000 --port 8765
 
 接続先URLを1行変えるだけ。MCPサーバーの改造不要。
 
-![agentwit demo](docs/demo.gif)
-
 [English](README.md) · [PyPI](https://pypi.org/project/agentwit/) · [Releases](https://github.com/tokotokokame/agentwit/releases)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-v0.5.0-orange.svg)](https://pypi.org/project/agentwit/)
-[![Tests](https://img.shields.io/badge/tests-226%20passing-brightgreen.svg)](#)
+[![PyPI](https://img.shields.io/badge/PyPI-v1.2.0-orange.svg)](https://pypi.org/project/agentwit/)
+[![Tests](https://img.shields.io/badge/tests-373%20passing-brightgreen.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## 🆕 v1.2.0 の新機能 — 常駐サービス化
+
+GUIで監視する形から、**常駐**して使う形になりました。MCPサーバーの手前に置いておけば、改ざん不能な記録を取り続け、普段使うSlackやメールにアラートやサマリをPushし、設定は一箇所から行えます。
+
+```bash
+pip install --upgrade agentwit
+agentwit init                 # ~/.agentwit/config.yaml + secrets.env (0600)
+agentwit daemon               # 単一プロセス・約60〜70MB・ループバック限定
+agentwit ui                   # ローカル設定コンソール (127.0.0.1)
+```
+
+- **常駐デーモン** — 単一プロセス。`SIGHUP`で設定ホットリロード、graceful停止。systemdユーザーユニット / macOS LaunchAgent を [`packaging/`](packaging/) に同梱。
+- **通知** — Slack / Discord / Webhook / メール(SMTP)。重大度別ルーティングとレート制限。アラートもサマリもスマホに届く。
+- **設定コンソール** — `agentwit ui`：ループバック限定で検出ルール切替・通知先管理・検出履歴確認。
+- **秘密はローカルのみ** — 認証情報は `~/.agentwit/secrets.env`（0600）だけ。設定・コンソール・ログに秘密は残さない。
+
+デスクトップGUI（`agentwit gui`）も引き続き利用できます。
 
 ---
 
