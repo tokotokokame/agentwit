@@ -11,6 +11,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-10-26
+
+Resident-service update: run agentwit as a daemon, manage it from a local
+console, route alerts to Slack/Discord/email, and keep secrets out of config
+and logs.
+
+### Added
+
+- **Unified config + secrets layer** — `~/.agentwit/config.yaml` (no secrets)
+  plus `~/.agentwit/secrets.env` (0600). Config references credentials as
+  `${env:NAME}`; nothing secret ships in the package. `agentwit init` and
+  `agentwit config get|set|validate`.
+- **Resident daemon** — `agentwit daemon`: single process (one thread idle,
+  no children, ~60–70 MB RSS), SIGHUP hot-reload of monitor/notify settings
+  without dropping the socket, graceful SIGTERM/SIGINT. systemd user unit and
+  macOS LaunchAgent under `packaging/` with memory/CPU caps and hardening.
+- **Config-driven monitoring** — toggle risk rules, limit scored tools, and
+  control redaction from config; wired into both HTTP and stdio proxies.
+- **Notification hub** — multiple destinations (Slack, Discord, generic
+  webhook, email/SMTP), per-route severity routing, per-minute rate limit,
+  https + host allow-list SSRF guard for webhooks, SMTP-host SSRF guard.
+- **Local settings console** — `agentwit ui`: loopback-only page to view and
+  change config, add destinations (secret-safe), and review detections. CSRF
+  token delivered via URL fragment; secret values are never returned by the API.
+- **Secret redaction** — two layers: key-name based, and value scanning for
+  high-confidence secret shapes (Bearer/Authorization, AWS/GitHub/OpenAI/Slack
+  tokens, JWT, Slack/Discord webhook URLs, PEM private keys).
+- **Session summary push** — `agentwit summary [--session] [--push]` and an
+  optional daemon end-of-session push, so a phone sees activity via the
+  existing notification routes.
+
+### Fixed
+
+- `cli.py` referenced an undefined `cli` for the `gui` command, which made the
+  whole CLI unimportable; corrected to the `main` group.
+- Webhook URLs (a secret) and raw exception text are no longer written to logs.
+- CSRF token compared in constant time; malformed Content-Length returns 400.
+
+### Security
+
+- Notification fields from MCP traffic are sanitized (@channel/@here, Slack
+  control spans, backticks, control chars) before interpolation.
+- First-pass threat-model review recorded; see the security review doc.
+
+---
+
 ## [1.0.0] - 2026-03-22
 
 ### Added

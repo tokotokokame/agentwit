@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentwit"
-version = "1.0.0"
+version = "1.2.0"
 description = "Transparent proxy witness for AI agent ↔ MCP server communications"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -69,3 +69,17 @@ Changelog = "https://github.com/tokotokokame/agentwit/releases"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentwit"]
+
+[tool.hatch.build.targets.sdist]
+# The pip package is the CLI + proxy + console. The Tauri desktop GUI ships
+# separately via GitHub Releases, so keep its source (and never-commit
+# node_modules / build caches) out of the sdist.
+exclude = [
+    "/gui",
+    "/.github",
+    "/dist",
+    "/build",
+    "docs/demo.gif",
+    "**/__pycache__",
+    "**/*.pyc",
+]
