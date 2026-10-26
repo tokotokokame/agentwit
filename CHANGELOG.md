@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- HTTP proxy: every forwarded request that produced a risk indicator
+  returned **500** (`NameError: ... '_notifier' ...`). The bypass branch in
+  `proxy_all` assigned `_notifier`, making it a local and shadowing the
+  enclosing notifier that the nested `_record()` closes over; when the
+  branch had not run (the normal daemon / NotificationHub setup) the
+  closure reference was unbound. Renamed the bypass-branch local. The HTTP
+  passthrough had no forward test at all, so a buffered-JSON MCP response
+  — the real-world case — was never exercised; added one that drives a
+  flagged payload through the route and fails with the original NameError
+  if the shadow returns.
 - `notify.routes`: an unquoted `on:`/`off:` key is read by YAML as the
   boolean `True`/`False`, not the string `"on"`/`"off"`. This previously
   parsed, saved, and passed `config validate` — while silently disabling

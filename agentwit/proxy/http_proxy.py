@@ -113,8 +113,13 @@ def create_proxy_app(
                 }) + "\n")
             if webhook_url:
                 from ..notifier.webhook import WebhookNotifier
-                _notifier = WebhookNotifier(url=webhook_url, min_severity="high")
-                asyncio.ensure_future(_notifier.notify_if_threshold(
+                # NB: use a distinct name. Assigning `_notifier` here would make
+                # it a local of proxy_all and shadow the enclosing _notifier
+                # that the nested _record() closes over — which raised
+                # NameError on every forwarded request when this branch had
+                # not run (the common daemon/NotificationHub configuration).
+                _bypass_notifier = WebhookNotifier(url=webhook_url, min_severity="high")
+                asyncio.ensure_future(_bypass_notifier.notify_if_threshold(
                     {"actor": actor, "tool": None,
                      "session_id": witness_logger.session_id,
                      "timestamp": datetime.now(timezone.utc).isoformat()},
