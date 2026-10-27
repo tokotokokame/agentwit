@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.2.1] - 2026-10-27
+
+Hotfix release: the v1.2.0 HTTP proxy returned 500 on real MCP traffic, and
+notification routing had two silent-failure footguns. All three were found
+during a live deployment against an MCP server. No API changes.
+
 ### Changed
 - Risk scoring no longer scans MCP introspection/handshake methods
   (`tools/list`, `initialize`, `ping`, `resources/list`, `prompts/list`, …)

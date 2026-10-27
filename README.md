@@ -18,8 +18,8 @@ Change one URL. No MCP server modification needed.
 [日本語版](README.ja.md) · [PyPI](https://pypi.org/project/agentwit/) · [Releases](https://github.com/tokotokokame/agentwit/releases)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-v1.2.0-orange.svg)](https://pypi.org/project/agentwit/)
-[![Tests](https://img.shields.io/badge/tests-373%20passing-brightgreen.svg)](#)
+[![PyPI](https://img.shields.io/badge/PyPI-v1.2.1-orange.svg)](https://pypi.org/project/agentwit/)
+[![Tests](https://img.shields.io/badge/tests-383%20passing-brightgreen.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![OWASP LLM Top 10](https://img.shields.io/badge/OWASP%20LLM-Top%2010%20mapped-red.svg)](docs/api-reference.md#owaspmapper)
 [![Plugin API](https://img.shields.io/badge/plugin--api-stable-blueviolet.svg)](docs/plugin-guide.md)
@@ -337,7 +337,8 @@ A blocked call leaves no trace. A witnessed call leaves evidence.
 | v0.7.0 | 2026-03-22 | OWASP LLM Top 10 mapping, Windows build (GitHub Actions) |
 | v1.0.0 | 2026-03-22 | Plugin API, SIEM integration, full docs, GUI tests |
 | v1.1.0 | 2026-03 | MCP Inspector desktop app (`agentwit gui`) |
-| **v1.2.0** | **2026-10-26** | **Resident daemon, config+secrets layer, notification hub (Slack/Discord/email), settings console, value redaction, summary push, security review** |
+| v1.2.0 | 2026-10-26 | Resident daemon, config+secrets layer, notification hub (Slack/Discord/email), settings console, value redaction, summary push, security review |
+| **v1.2.1** | **2026-10-27** | **Hotfix: HTTP proxy 500 on real traffic, notify `on:` YAML footgun, tools/list false-positive alerts (found in live deployment)** |
 
 ---
 
