@@ -2,6 +2,12 @@
 
 **AIエージェントのMCPツール呼び出しを監査・デバッグする。**
 
+<p align="center">
+  <img src="docs/demo-resident.gif"
+       alt="agentwit 常駐witnessプロキシ：MCPツール呼び出しを転送しながら逐次スコアリングし、HIGH/CRITICALをスマホにPush、改ざん不能な署名付きログに記録する様子"
+       width="760">
+</p>
+
 ```bash
 pip install agentwit
 agentwit proxy --target http://localhost:3000 --port 8765

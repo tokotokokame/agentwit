@@ -2,6 +2,12 @@
 
 **Debug and audit AI agent ↔ MCP server tool calls.**
 
+<p align="center">
+  <img src="docs/demo-resident.gif"
+       alt="agentwit resident witness proxy: forwards MCP tool calls, scores each one, pushes HIGH/CRITICAL alerts to your phone, and records a tamper-evident signed log"
+       width="760">
+</p>
+
 ```bash
 pip install agentwit
 agentwit proxy --target http://localhost:3000 --port 8765
