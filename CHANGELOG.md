@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Risk scoring no longer scans MCP introspection/handshake methods
+  (`tools/list`, `initialize`, `ping`, `resources/list`, `prompts/list`, …)
+  by default. Their payloads are capability *catalogues*, not actions, so
+  keyword-scanning them flagged a security-domain toolset on every single
+  `tools/list` — e.g. a tool named `cloud-scan` (param `credentials`) tripped
+  credential_access and a description mentioning `nmap` tripped
+  lateral_movement, firing HIGH alerts on mere capability enumeration. These
+  events are still recorded (chain + signature intact); they are just not
+  risk-scored. Set `monitor.score_introspection: true` to restore catalogue
+  scanning. Real risk in `tools/call` arguments and results is unaffected.
+
 ### Fixed
 - HTTP proxy: every forwarded request that produced a risk indicator
   returned **500** (`NameError: ... '_notifier' ...`). The bypass branch in

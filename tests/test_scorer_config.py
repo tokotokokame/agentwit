@@ -43,3 +43,43 @@ def test_from_config_applies_rules_and_tools():
 
 def test_from_config_none_is_default():
     assert {"shell_exec", "privilege_escalation"} <= _pats(RiskScorer.from_config(None))
+
+
+# --- introspection skipping (tools/list false-positive fix) ----------------
+
+# A catalogue whose tool metadata legitimately contains security keywords.
+_CATALOG_EV = {
+    "action": "tools/list",
+    "tool": None,
+    "full_payload": {"result": {"tools": [
+        {"name": "cloud-scan",
+         "inputSchema": {"properties": {"credentials": {"type": "object"}}}},
+        {"name": "htb-advisor", "description": "needs an nmap result"},
+    ]}},
+}
+
+
+def test_introspection_not_scored_by_default():
+    # tools/list catalogue must not raise credential_access / lateral_movement
+    assert RiskScorer().score_event(_CATALOG_EV) == []
+
+
+def test_introspection_scored_when_opted_in():
+    pats = _pats_ev(RiskScorer(score_introspection=True), _CATALOG_EV)
+    assert "credential_access" in pats and "lateral_movement" in pats
+
+
+def test_tools_call_still_scored():
+    # the real action path is unaffected: a tools/call with a flagged arg scores
+    ev = {"action": "tools/call", "tool": "run_command",
+          "full_payload": {"params": {"arguments": {"cmd": "bash -lc id"}}}}
+    assert "shell_exec" in _pats_ev(RiskScorer(), ev)
+
+
+def test_from_config_passes_score_introspection():
+    cfg = {"monitor": {"score_introspection": True}}
+    assert RiskScorer.from_config(cfg).score_event(_CATALOG_EV) != []
+
+
+def _pats_ev(scorer, ev) -> set:
+    return {i["pattern"] for i in scorer.score_event(ev)}

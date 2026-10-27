@@ -27,6 +27,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "lateral_movement": True,
         },
         "only_tools": [],         # [] = all tools; names = restrict monitoring scope
+        "score_introspection": False,  # scan tools/list & handshake catalogues too
         "redact": {
             "enabled": True,      # keep secrets out of the tamper-evident log
             "keys": ["password", "token", "api_key", "apikey",

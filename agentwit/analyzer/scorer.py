@@ -81,6 +81,26 @@ PROMPT_INJECTION_PATTERNS: list[tuple[str, str, str]] = [
 # Severity ordering for comparisons
 _SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
+# MCP introspection / handshake methods. Their payloads are *capability
+# metadata* (the tool catalogue, server info), not actions a client took.
+# Keyword-scanning a catalogue produces guaranteed false positives for any
+# security-domain toolset — e.g. a pentest server advertising tools named
+# "cloud-scan" (param "credentials") or "htb-advisor" (mentions "nmap")
+# trips credential_access / lateral_movement on every single tools/list.
+# These events are still *recorded* (chain + signature intact); they are
+# just not risk-scored unless the operator opts in. Real risk lives in
+# tools/call arguments and their results, which are always scored.
+INTROSPECTION_METHODS = frozenset({
+    "initialize",
+    "notifications/initialized",
+    "ping",
+    "tools/list",
+    "resources/list",
+    "resources/templates/list",
+    "prompts/list",
+    "logging/setLevel",
+})
+
 
 class RiskScorer:
     """Score a witness log event against known risk patterns.
@@ -101,6 +121,7 @@ class RiskScorer:
         patterns: list[tuple[str, str, str]] | None = None,
         rules: dict[str, bool] | None = None,
         only_tools: list[str] | None = None,
+        score_introspection: bool = False,
     ) -> None:
         """Initialise the RiskScorer.
 
@@ -112,6 +133,11 @@ class RiskScorer:
                 ``False`` is disabled; names absent from the map stay enabled.
             only_tools: Optional allow-list of tool names to score. Empty or
                 ``None`` means every tool is scored.
+            score_introspection: When ``False`` (default), MCP introspection /
+                handshake methods (:data:`INTROSPECTION_METHODS`, e.g.
+                ``tools/list``) are not risk-scored, because keyword-scanning a
+                capability catalogue yields false positives. Set ``True`` to
+                scan them anyway.
         """
         base = patterns if patterns is not None else RISK_PATTERNS
         if rules:
@@ -122,6 +148,7 @@ class RiskScorer:
             for name, regex, severity in self._patterns
         ]
         self._only_tools = set(only_tools or [])
+        self._score_introspection = score_introspection
 
     @classmethod
     def from_config(cls, config: dict | None) -> "RiskScorer":
@@ -130,6 +157,7 @@ class RiskScorer:
         return cls(
             rules=monitor.get("rules"),
             only_tools=monitor.get("only_tools"),
+            score_introspection=bool(monitor.get("score_introspection", False)),
         )
 
     def score_event(self, event: dict) -> list[dict]:
@@ -150,6 +178,10 @@ class RiskScorer:
         tool: str = event.get("tool") or ""
         if self._only_tools and tool not in self._only_tools:
             return []
+        if not self._score_introspection:
+            action = str(event.get("action") or "")
+            if action in INTROSPECTION_METHODS:
+                return []
         payload_text: str = json.dumps(event.get("full_payload", {}), default=str)
         haystack = f"{tool} {payload_text}"
 
